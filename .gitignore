@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+
+# Local line snapshots and generated reports
+data/
+reports/
+*.zip
+*.csv
+*.db
+linegame_state.json
+
+# Local notebooks and private dictionaries/snapshots
+*.ipynb
+line_reference_maps.json
+
+# Vercel/local metadata
+.vercel/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db

@@ -1,0 +1,57 @@
+const http = require("http");
+const fs = require("fs");
+const path = require("path");
+const anomalies = require("./api/anomalies");
+const review = require("./api/review");
+const dashboard = require("./api/dashboard");
+
+const root = __dirname;
+const port = Number(process.env.PORT || 8766);
+
+const types = {
+  ".html": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "application/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8"
+};
+
+function wrap(req, res) {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  req.query = Object.fromEntries(url.searchParams.entries());
+  return url;
+}
+
+function serveFile(res, filePath) {
+  fs.readFile(filePath, (error, body) => {
+    if (error) {
+      res.statusCode = 404;
+      res.end("Not found");
+      return;
+    }
+    res.setHeader("content-type", types[path.extname(filePath)] || "application/octet-stream");
+    res.setHeader("cache-control", "no-store");
+    res.end(body);
+  });
+}
+
+const server = http.createServer((req, res) => {
+  const url = wrap(req, res);
+  if (url.pathname === "/api/anomalies") {
+    anomalies(req, res);
+    return;
+  }
+  if (url.pathname === "/api/review") {
+    review(req, res);
+    return;
+  }
+  if (url.pathname === "/api/dashboard") {
+    dashboard(req, res);
+    return;
+  }
+  const file = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
+  serveFile(res, path.join(root, file));
+});
+
+server.listen(port, "127.0.0.1", () => {
+  console.log(`Preview http://127.0.0.1:${port}`);
+});

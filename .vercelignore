@@ -1,0 +1,13 @@
+.git
+__pycache__
+data
+reports
+*.py
+*.pyc
+*.ipynb
+*.csv
+*.zip
+*.db
+line_reference_maps.json
+linegame_state.json
+local_vercel_preview.js

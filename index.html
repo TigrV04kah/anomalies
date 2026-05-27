@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Line Monitor</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>Line Monitor</h1>
+        <p id="summary">Загрузка</p>
+      </div>
+      <div id="stats" class="stats" aria-live="polite">
+        <span class="stat stat-new">New: <b>0</b></span>
+        <span class="stat stat-defect">Defect: <b>0</b></span>
+        <span class="stat stat-normal">Normal: <b>0</b></span>
+      </div>
+      <div class="toolbar">
+        <div class="tabs" role="tablist" aria-label="Scope">
+          <button class="tab active" type="button" data-scope="current" role="tab" aria-selected="true">&#1058;&#1077;&#1082;&#1091;&#1097;&#1080;&#1077;</button>
+          <button class="tab" type="button" data-scope="history" role="tab" aria-selected="false">&#1048;&#1089;&#1090;&#1086;&#1088;&#1080;&#1103;</button>
+          <button class="tab" type="button" data-scope="dashboard" role="tab" aria-selected="false">Dashboard</button>
+          <button class="tab" type="button" data-scope="guide" role="tab" aria-selected="false">&#1057;&#1087;&#1088;&#1072;&#1074;&#1082;&#1072;</button>
+        </div>
+        <label>
+          Проверка
+          <select id="checkFilter">
+            <option value="all">Все</option>
+            <option value="Main = Period (average)">Main = Period (average)</option>
+            <option value="Total = Ind total 1 + Ind Total 2 (average)">Total = Ind total 1 + Ind Total 2 (average)</option>
+            <option value="Stat Conflicts">Stat Conflicts</option>
+            <option value="Period Conflicts">Period Conflicts</option>
+            <option value="Tennis Special. What Earlear">Tennis Special. What Earlear</option>
+          </select>
+        </label>
+        <label>
+          Статус
+          <select id="statusFilter">
+            <option value="DIFF">DIFF</option>
+            <option value="NO_PERIOD_FAVORITE">NO_PERIOD_FAVORITE</option>
+            <option value="PERIOD_NO_FAVORITE">PERIOD_NO_FAVORITE</option>
+            <option value="PERIOD_BOTH_FAVORITE">PERIOD_BOTH_FAVORITE</option>
+          </select>
+        </label>
+        <label>
+          Разметка
+          <select id="verdictFilter">
+            <option value="unreviewed">Только новые</option>
+            <option value="all">Все</option>
+            <option value="defect">Дефекты</option>
+            <option value="normal">Normal</option>
+          </select>
+        </label>
+        <button id="refreshButton" type="button">Обновить</button>
+      </div>
+    </header>
+
+    <main>
+      <section id="message" class="message" hidden></section>
+      <section id="list" class="list"></section>
+    </main>
+
+    <template id="anomalyTemplate">
+      <article class="anomaly">
+        <div class="anomaly-main">
+          <div class="rowhead">
+            <span class="badge status"></span>
+            <span class="check-title"></span>
+            <span class="sport"></span>
+            <span class="seen"></span>
+          </div>
+          <h2 class="match"></h2>
+          <div class="champ"></div>
+          <div class="grid">
+            <div>
+              <div class="label">Период 0</div>
+              <div class="base-favorite"></div>
+              <div class="odds base-odds"></div>
+            </div>
+            <div>
+              <div class="label period-label"></div>
+              <div class="period-favorite"></div>
+              <div class="odds period-odds"></div>
+            </div>
+            <div>
+              <div class="label">Ключ</div>
+              <div class="meta"></div>
+            </div>
+          </div>
+        </div>
+        <form class="review">
+          <div class="review-state"></div>
+          <div class="choice">
+            <label><input type="radio" name="verdict" value="defect"> defect</label>
+            <label><input type="radio" name="verdict" value="normal"> normal</label>
+          </div>
+          <textarea name="review_comment" rows="3" placeholder="Комментарий"></textarea>
+          <div class="actions">
+            <input name="reviewed_by" list="reviewersList" placeholder="Кто проверил" autocomplete="off">
+            <button type="submit">Сохранить</button>
+          </div>
+        </form>
+      </article>
+    </template>
+
+    <datalist id="reviewersList"></datalist>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,32 @@
+[
+  {
+    "check_name": "period_deviations_average",
+    "check_title": "Main = Period (average)",
+    "short_description": "Проверяет, совпадает ли общий тотал матча с суммой тоталов двух основных периодов.",
+    "full_description": "Для поддерживаемых спортов берутся тоталы и индивидуальные тоталы с коэффициентами 1.65-2.30. Param усредняется по MainGameId, GameType, Period и EventType. Затем значение периода 0 сравнивается с суммой обычных периодов: Football, FootHall, Handball, Rugby = 1+2; Hockey, Floorball = 1+2+3; Basketball, AustralianFootball, WaterPolo = 1+2+3+4. Отдельно, если у матча есть обе половины 11 и 12, период 0 сравнивается с 11+12. Если для спорта нет нужной полной группы обычных периодов или нет обеих половин, соответствующее сравнение пропускается. Критическая дельта зависит от размера общего тотала: до 5 = 1.0, до 10 = 1.5, до 20 = 2.0, до 35 = 2.0, до 60 = 3.0, до 80 = 4.0, до 120 = 6.0, выше 120 = 8.0."
+  },
+  {
+    "check_name": "total_deviations_average",
+    "check_title": "Total = Ind total 1 + Ind Total 2 (average)",
+    "short_description": "Проверяет, согласован ли общий тотал с суммой индивидуальных тоталов команд.",
+    "full_description": "Для каждого периода и GameType выбирается линия с коэффициентом, ближайшим к 1.95. После этого общий Total сравнивается с IndTotal1 + IndTotal2. Аномалия появляется, если Total больше ожидаемой суммы более чем на 1.5."
+  },
+  {
+    "check_name": "stat_conflicts",
+    "check_title": "Stat Conflicts",
+    "short_description": "Проверяет конфликт между фаворитом матча и фаворитом по статистическому рынку.",
+    "full_description": "Сначала определяется фаворит матча по рынкам p1/p2. Потом определяется фаворит по статистике: Corners, Tackles, ShotsOnTarget, ShotByGates, Save, GoalFromGates, PossessionPercentage. Если фавориты противоположны, строка считается аномалией. Для Save и GoalFromGates логика инвертирована."
+  },
+  {
+    "check_name": "period_conflicts",
+    "check_title": "Period Conflicts",
+    "short_description": "Проверяет, что фаворит матча остается тем же фаворитом в периодах.",
+    "full_description": "Для GameType Main сравниваются коэффициенты p1/p2 в периоде 0 и в отдельных периодах. Коэффициент ниже 1.8 считается фаворитом, 1.8-2.3 равной зоной, 2.3 и выше аутсайдером. Аномалия появляется, если фаворит периода отличается от фаворита матча."
+  },
+  {
+    "check_name": "tennis_special_what_earlear",
+    "check_title": "Tennis Special. What Earlear",
+    "short_description": "Проверяет теннисную спецставку 'что раньше' против тоталов эйсов и брейков.",
+    "full_description": "Для тенниса сравниваются параметры Ace и Breaks с рынками ace_before_break и break_before_ace. Если тоталы указывают на один сценарий, а коэффициент рынка 'что раньше' выглядит противоположно, строка считается аномалией."
+  }
+]

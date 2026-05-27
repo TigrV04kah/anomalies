@@ -181,7 +181,7 @@ function fillReview(form, item) {
 }
 
 function applyReviewState(article, node, item) {
-  const hasCompletedReview = item.verdict && (item.review_comment || "").trim();
+  const hasCompletedReview = Boolean(item.verdict);
   const stateBox = node.querySelector(".review-state");
   article.classList.remove("review-defect", "review-normal");
 

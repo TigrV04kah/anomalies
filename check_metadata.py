@@ -6,6 +6,7 @@ CHECK_TITLES = {
     "period_deviations_average": "Main = Period (average)",
     "total_deviations_average": "Total = Ind total 1 + Ind Total 2 (average)",
     "stat_conflicts": "Stat Conflicts",
+    "football_stat_relations": "Football Stat Relations",
     "period_conflicts": "Period Conflicts",
     "tennis_special_what_earlear": "Tennis Special. What Earlear",
 }
@@ -49,6 +50,14 @@ def stable_key(check_name, row):
             str(row.get("MainGameId", "")),
             str(row.get("GameId", "")),
             str(row.get("StatType", "")),
+        ])
+    if check_name == "football_stat_relations":
+        return "|".join([
+            check_name,
+            str(row.get("MainGameId", "")),
+            str(row.get("Rule", "")),
+            str(row.get("SourceGameType", "")),
+            str(row.get("TargetGameType", "")),
         ])
     if check_name == "tennis_special_what_earlear":
         return "|".join([

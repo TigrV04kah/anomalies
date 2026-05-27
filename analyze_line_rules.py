@@ -17,6 +17,8 @@ FOOTBALL_STAT_TYPES = [
     "PossessionPercentage",
 ]
 FOOTBALL_INVERTED = {"Save", "GoalFromGates"}
+SHOT_RELATION_TYPES = {"ShotsOnTarget", "ShotByGates", "GoalFromGates"}
+TOTAL_CENTER_EVENTS = {"Total_B", "Total_M"}
 PERIOD_DEVIATION_SPORT_PERIODS = {
     "AustralianFootball": (1, 2, 3, 4),
     "Basketball": (1, 2, 3, 4),
@@ -355,6 +357,18 @@ def stat_conflict_by_coef_direction(match_fav, stat_p1, stat_p2):
     return favorite_stat_coef > opponent_stat_coef
 
 
+def add_game_info(row, info, main_game_id):
+    gi = info.get(main_game_id, {})
+    row.update({
+        "Sport": gi.get("SportName"),
+        "Champ": gi.get("Champ"),
+        "Opp1": gi.get("Opp1"),
+        "Opp2": gi.get("Opp2"),
+        "Start": gi.get("Start"),
+    })
+    return row
+
+
 def analyze_stat_conflicts(df):
     if df.empty:
         return []
@@ -410,6 +424,124 @@ def analyze_stat_conflicts(df):
             "MatchFavorite": match_fav,
             "StatFavorite": stat_fav,
         })
+    return rows
+
+
+def central_total_lines(df):
+    totals = df[
+        (df["SportName"] == "Football") &
+        (df["Period"] == 0) &
+        (df["GameType"].isin(SHOT_RELATION_TYPES)) &
+        (df["EventType"].isin(TOTAL_CENTER_EVENTS)) &
+        (df["Coef"] > 1) &
+        (df["Param"].notna())
+    ].copy()
+    if totals.empty:
+        return pd.DataFrame()
+    totals["ProbabilityDistance"] = (1 / totals["Coef"] - 0.5).abs()
+    totals = totals.sort_values(
+        ["MainGameId", "GameType", "ProbabilityDistance", "Coef", "GameId"],
+        kind="mergesort",
+    )
+    return totals.groupby(["MainGameId", "GameType"], as_index=False).first()
+
+
+def outcome_lines(df):
+    outcomes = df[
+        (df["SportName"] == "Football") &
+        (df["Period"] == 0) &
+        (df["GameType"].isin(SHOT_RELATION_TYPES)) &
+        (df["EventType"].isin(["p1", "p2"]))
+    ].copy()
+    if outcomes.empty:
+        return pd.DataFrame()
+    pivot = outcomes.pivot_table(
+        index=["MainGameId", "GameId", "GameType"],
+        columns="EventType",
+        values="Coef",
+        aggfunc="mean",
+    ).reset_index()
+    if "p1" not in pivot.columns:
+        pivot["p1"] = pd.NA
+    if "p2" not in pivot.columns:
+        pivot["p2"] = pd.NA
+    return pivot
+
+
+def analyze_football_stat_relations(df):
+    if df.empty:
+        return []
+    info = game_info_map(df)
+    rows = []
+
+    centers = central_total_lines(df)
+    if not centers.empty:
+        center_pivot = centers.pivot_table(
+            index="MainGameId",
+            columns="GameType",
+            values="Param",
+            aggfunc="first",
+        ).reset_index()
+        for _, item in center_pivot.iterrows():
+            main_game_id = item.get("MainGameId")
+            shots_on_target = item.get("ShotsOnTarget")
+            shot_by_gates = item.get("ShotByGates")
+            if pd.notna(shots_on_target) and pd.notna(shot_by_gates) and shots_on_target > shot_by_gates:
+                source = centers[
+                    (centers["MainGameId"] == main_game_id) &
+                    (centers["GameType"] == "ShotsOnTarget")
+                ].iloc[0]
+                target = centers[
+                    (centers["MainGameId"] == main_game_id) &
+                    (centers["GameType"] == "ShotByGates")
+                ].iloc[0]
+                rows.append(add_game_info({
+                    "Status": "DIFF",
+                    "MainGameId": main_game_id,
+                    "Rule": "ShotsOnTarget center greater than ShotByGates center",
+                    "SourceGameType": "ShotsOnTarget",
+                    "TargetGameType": "ShotByGates",
+                    "SourceGameId": source.get("GameId"),
+                    "TargetGameId": target.get("GameId"),
+                    "SourceCenterParam": round(shots_on_target, 4),
+                    "TargetCenterParam": round(shot_by_gates, 4),
+                    "SourceCenterCoef": round(source.get("Coef"), 4),
+                    "TargetCenterCoef": round(target.get("Coef"), 4),
+                    "SourceCenterEventType": source.get("EventType"),
+                    "TargetCenterEventType": target.get("EventType"),
+                }, info, main_game_id))
+
+    outcomes = outcome_lines(df)
+    if not outcomes.empty:
+        by_main = {
+            main_game_id: group.set_index("GameType")
+            for main_game_id, group in outcomes.groupby("MainGameId", dropna=False)
+        }
+        for source_type in ("ShotByGates", "ShotsOnTarget"):
+            for main_game_id, group in by_main.items():
+                if source_type not in group.index or "GoalFromGates" not in group.index:
+                    continue
+                source = group.loc[source_type]
+                target = group.loc["GoalFromGates"]
+                source_fav = get_match_favorite_by_coef_zone(source.get("p1"), source.get("p2"))
+                if not stat_conflict_by_coef_direction(source_fav, target.get("p1"), target.get("p2")):
+                    continue
+                target_fav = "p1" if target.get("p1") < target.get("p2") else "p2"
+                rows.append(add_game_info({
+                    "Status": "DIFF",
+                    "MainGameId": main_game_id,
+                    "Rule": f"{source_type} favorite is outsider on GoalFromGates",
+                    "SourceGameType": source_type,
+                    "TargetGameType": "GoalFromGates",
+                    "SourceGameId": source.get("GameId"),
+                    "TargetGameId": target.get("GameId"),
+                    "SourceFavorite": source_fav,
+                    "TargetFavorite": target_fav,
+                    "SourceCoefP1": round(source.get("p1"), 4),
+                    "SourceCoefP2": round(source.get("p2"), 4),
+                    "TargetCoefP1": round(target.get("p1"), 4),
+                    "TargetCoefP2": round(target.get("p2"), 4),
+                }, info, main_game_id))
     return rows
 
 
@@ -568,6 +700,7 @@ CHECKS = {
     "period_deviations_average": analyze_period_deviations_average,
     "total_deviations_average": analyze_total_deviations_average,
     "stat_conflicts": analyze_stat_conflicts,
+    "football_stat_relations": analyze_football_stat_relations,
     "period_conflicts": analyze_period_conflicts,
     "tennis_special_what_earlear": analyze_tennis_what_earlear,
 }

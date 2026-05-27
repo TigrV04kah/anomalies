@@ -79,6 +79,11 @@ Object.assign(CHECK_HELP, {
     short: "Проверяет конфликт между фаворитом матча и фаворитом по статистическому рынку.",
     long: "Сначала определяется фаворит матча по рынкам p1/p2. Потом определяется фаворит по статистике: Corners, Tackles, ShotsOnTarget, ShotByGates, Save, GoalFromGates, PossessionPercentage. Если фавориты противоположны, строка считается аномалией. Для Save и GoalFromGates логика инвертирована."
   },
+  football_stat_relations: {
+    title: "Football Stat Relations",
+    short: "Проверяет согласованность ударной статистики в футболе.",
+    long: "Для Football period 0 центральный тотал выбирается как линия Total_B/Total_M с вероятностью ближе всего к 50%. Центральный тотал ShotsOnTarget не должен быть больше ShotByGates. Также фаворит ниже 1.8 по ShotsOnTarget или ShotByGates не должен становиться аутсайдером по GoalFromGates."
+  },
   period_conflicts: {
     title: "Period Conflicts",
     short: "Проверяет, что фаворит матча остается тем же фаворитом в периодах.",
@@ -282,6 +287,9 @@ function describeAnomaly(item) {
   if (item.check_name === "stat_conflicts") {
     return `Фаворит матча ${valueOrDash(payload.MatchFavorite)}, а фаворит статистики ${valueOrDash(payload.StatType)} - ${valueOrDash(payload.StatFavorite)}. Это противоположные стороны.`;
   }
+  if (item.check_name === "football_stat_relations") {
+    return `${valueOrDash(payload.Rule)}. ${valueOrDash(payload.SourceGameType)} сравнивается с ${valueOrDash(payload.TargetGameType)}.`;
+  }
   if (item.check_name === "tennis_special_what_earlear") {
     return `Тоталы Ace (${valueOrDash(payload.Param_Ace)}) и Breaks (${valueOrDash(payload.Param_Breaks)}) конфликтуют с коэффициентами рынка 'что раньше'.`;
   }
@@ -353,6 +361,16 @@ function renderDetails(container, item) {
   } else if (item.check_name === "stat_conflicts") {
     appendTable(container, ["Stat", "Match fav", "Stat fav", "Match P1", "Match P2", "Stat P1", "Stat P2"], [
       [payload.StatType, payload.MatchFavorite, payload.StatFavorite, payload.MatchCoefP1, payload.MatchCoefP2, payload.StatCoefP1, payload.StatCoefP2]
+    ]);
+  } else if (item.check_name === "football_stat_relations") {
+    appendTable(container, ["Rule", "Source", "Target"], [
+      [payload.Rule, payload.SourceGameType, payload.TargetGameType]
+    ]);
+    appendTable(container, ["Source game", "Target game", "Source P1", "Source P2", "Target P1", "Target P2"], [
+      [payload.SourceGameId, payload.TargetGameId, payload.SourceCoefP1, payload.SourceCoefP2, payload.TargetCoefP1, payload.TargetCoefP2]
+    ]);
+    appendTable(container, ["Source center", "Target center", "Source coef", "Target coef"], [
+      [payload.SourceCenterParam, payload.TargetCenterParam, payload.SourceCenterCoef, payload.TargetCenterCoef]
     ]);
   } else if (item.check_name === "tennis_special_what_earlear") {
     appendTable(container, ["Period", "Ace total", "Breaks total", "Ace before break", "Break before ace"], [

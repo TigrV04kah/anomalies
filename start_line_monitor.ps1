@@ -17,7 +17,7 @@ if (-not (Test-Path -LiteralPath $Node)) {
     $Node = "node"
 }
 
-foreach ($Name in @("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_PUBLISHABLE_KEY")) {
+foreach ($Name in @("LINE_MONGO_URI", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_PUBLISHABLE_KEY")) {
     if (-not [Environment]::GetEnvironmentVariable($Name, "Process")) {
         $Value = [Environment]::GetEnvironmentVariable($Name, "User")
         if ($Value) {

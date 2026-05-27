@@ -10,6 +10,23 @@ from pymongo import MongoClient
 
 DEFAULT_MONGO_URI = None
 
+
+def env_value(name):
+    value = os.environ.get(name)
+    if value:
+        return value
+    if os.name != "nt":
+        return None
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
+            value, _ = winreg.QueryValueEx(key, name)
+            return value
+    except OSError:
+        return None
+
+
 GAME_TYPE_NAMES = {
     0: "Undefined",
     1: "Main",
@@ -311,7 +328,7 @@ def main():
 
     if args.save_reference_only:
         return
-    uri = os.environ.get("LINE_MONGO_URI", DEFAULT_MONGO_URI)
+    uri = env_value("LINE_MONGO_URI") or DEFAULT_MONGO_URI
     if not uri:
         raise RuntimeError("LINE_MONGO_URI environment variable is required")
     collection = MongoClient(uri)["Line"]["LineGame"]

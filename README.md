@@ -31,4 +31,6 @@ Required local environment variables:
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 
-Use `Start Line Monitor.cmd` to run the monitor and start the local preview.
+Use `Start Line Monitor.cmd` to run the monitor and start the local preview. Full line snapshots are stored in `snapshots/current_line_snapshot.zip` by default.
+
+By default, every monitor run fetches the full current line from Mongo. Incremental mode is kept only for debugging and must be requested explicitly with `--incremental`.

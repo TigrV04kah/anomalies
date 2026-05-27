@@ -8,14 +8,14 @@ from pathlib import Path
 from pymongo import MongoClient
 
 from analyze_line_rules import analyze_all_checks
-from export_line_snapshot import DEFAULT_MONGO_URI, convert_game, load_reference_json
+from export_line_snapshot import DEFAULT_MONGO_URI, convert_game, env_value, load_reference_json
 from supabase_store import is_configured as supabase_is_configured
 from supabase_store import sync_run_results as sync_supabase_run_results
 
 
 DEFAULT_STATE_PATH = Path("linegame_state.json")
 DEFAULT_REFERENCE_PATH = Path("line_reference_maps.json")
-DEFAULT_SNAPSHOT_PATH = Path("data/current_line_snapshot.zip")
+DEFAULT_SNAPSHOT_PATH = Path("snapshots/current_line_snapshot.zip")
 DEFAULT_REPORTS_DIR = Path("reports")
 DEFAULT_OVERLAP_MINUTES = 1
 
@@ -56,8 +56,8 @@ def save_snapshot(path, games):
     os.replace(tmp_path, path)
 
 
-def build_query(state, snapshot_exists, overlap, force_full=False):
-    if force_full:
+def build_query(state, snapshot_exists, overlap, incremental=False):
+    if not incremental:
         return {}, "full", None
     last_dd = parse_dt(state.get("last_dd"))
     if not last_dd or not snapshot_exists:
@@ -67,7 +67,7 @@ def build_query(state, snapshot_exists, overlap, force_full=False):
 
 
 def fetch_changed_games(query, refs, limit=0):
-    uri = os.environ.get("LINE_MONGO_URI", DEFAULT_MONGO_URI)
+    uri = env_value("LINE_MONGO_URI") or DEFAULT_MONGO_URI
     if not uri:
         raise RuntimeError("LINE_MONGO_URI environment variable is required")
     collection = MongoClient(uri)["Line"]["LineGame"]
@@ -109,7 +109,7 @@ def run(args):
     state = load_state(state_path)
     snapshot_exists = snapshot_path.exists()
     overlap = timedelta(minutes=args.overlap_minutes)
-    query, mode, updated_since = build_query(state, snapshot_exists, overlap, force_full=args.force_full)
+    query, mode, updated_since = build_query(state, snapshot_exists, overlap, incremental=args.incremental)
 
     print(f"Mode: {mode}")
     if updated_since:
@@ -187,7 +187,8 @@ def main():
     parser.add_argument("--snapshot", default=str(DEFAULT_SNAPSHOT_PATH))
     parser.add_argument("--reports-dir", default=str(DEFAULT_REPORTS_DIR))
     parser.add_argument("--overlap-minutes", type=int, default=DEFAULT_OVERLAP_MINUTES)
-    parser.add_argument("--force-full", action="store_true", help="Ignore state and rebuild snapshot from full LineGame")
+    parser.add_argument("--incremental", action="store_true", help="Debug mode: fetch only games updated since the previous run")
+    parser.add_argument("--force-full", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--limit", type=int, default=0, help="Debug limit for Mongo query")
     args = parser.parse_args()
     run(args)

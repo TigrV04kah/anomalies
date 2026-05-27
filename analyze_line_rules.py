@@ -337,6 +337,24 @@ def get_stat_favorite(p1, p2, stat_type, threshold=0.07):
     return "p1" if prob_p1 > prob_p2 else "p2"
 
 
+def get_match_favorite_by_coef_zone(p1, p2):
+    if pd.isna(p1) or pd.isna(p2):
+        return "noone"
+    if p1 < 1.8 and p1 < p2:
+        return "p1"
+    if p2 < 1.8 and p2 < p1:
+        return "p2"
+    return "noone"
+
+
+def stat_conflict_by_coef_direction(match_fav, stat_p1, stat_p2):
+    if match_fav not in {"p1", "p2"} or pd.isna(stat_p1) or pd.isna(stat_p2):
+        return False
+    favorite_stat_coef = stat_p1 if match_fav == "p1" else stat_p2
+    opponent_stat_coef = stat_p2 if match_fav == "p1" else stat_p1
+    return favorite_stat_coef > opponent_stat_coef
+
+
 def analyze_stat_conflicts(df):
     if df.empty:
         return []
@@ -365,17 +383,16 @@ def analyze_stat_conflicts(df):
         first = group.iloc[0]
         match_p1 = first.get("p1")
         match_p2 = first.get("p2")
-        max_coef = 1.7 if stat_type == "Corners" else 2.2
-        match_fav = get_match_favorite(match_p1, match_p2, max_coef=max_coef)
+        match_fav = get_match_favorite_by_coef_zone(match_p1, match_p2)
         stat_p1 = group[group["EventType"] == "p1"]["Coef"].iloc[0] if "p1" in set(group["EventType"]) else None
         stat_p2 = group[group["EventType"] == "p2"]["Coef"].iloc[0] if "p2" in set(group["EventType"]) else None
-        stat_fav = get_stat_favorite(stat_p1, stat_p2, stat_type)
-        if match_fav == "noone" or stat_fav == "noone" or match_fav == stat_fav:
+        if not stat_conflict_by_coef_direction(match_fav, stat_p1, stat_p2):
             continue
         if stat_type == "Tackles":
             favorite_coef = match_p1 if match_fav == "p1" else match_p2
             if pd.isna(favorite_coef) or favorite_coef > 1.4:
                 continue
+        stat_fav = "p1" if pd.notna(stat_p1) and pd.notna(stat_p2) and stat_p1 < stat_p2 else "p2"
         rows.append({
             "Status": "DIFF",
             "GameId": game_id,

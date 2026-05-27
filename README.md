@@ -31,7 +31,7 @@ Required local environment variables:
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 
-Use `Start Line Monitor.cmd` to start the local monitor loop and local preview. It runs the full monitor immediately, then repeats every 10 minutes while the command window stays open. Stop it with `Ctrl+C`.
+Use `Start Line Monitor.cmd` to start the local monitor loop and local preview. It runs the full monitor immediately, then repeats every 5 minutes while the command window stays open. Stop it with `Ctrl+C`.
 
 Full line snapshots are stored in `snapshots/current_line_snapshot.zip` by default.
 

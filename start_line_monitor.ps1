@@ -64,7 +64,7 @@ while ($true) {
         Write-Host "[$($FailedAt.ToString('yyyy-MM-dd HH:mm:ss'))] Run failed: $($_.Exception.Message)" -ForegroundColor Red
     }
 
-    $NextRun = (Get-Date).AddMinutes(10)
+    $NextRun = (Get-Date).AddMinutes(5)
     Write-Host "Next run: $($NextRun.ToString('yyyy-MM-dd HH:mm:ss')). Keep this window open. Press Ctrl+C to stop."
-    Start-Sleep -Seconds 600
+    Start-Sleep -Seconds 300
 }

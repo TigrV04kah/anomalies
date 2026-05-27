@@ -28,23 +28,43 @@ foreach ($Name in @("LINE_MONGO_URI", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY
 
 $env:PORT = "8766"
 
-Write-Host "Running line monitor..."
-& $Python "run_line_monitor.py"
-if ($LASTEXITCODE -ne 0) {
-    throw "run_line_monitor.py failed with exit code $LASTEXITCODE"
+function Start-LocalUi {
+    Write-Host "Starting local UI..."
+    Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" |
+        Where-Object { $_.CommandLine -like "*local_vercel_preview.js*" -and $_.CommandLine -like "*$Root*" } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+
+    Start-Process -FilePath $Node `
+        -ArgumentList "local_vercel_preview.js" `
+        -WorkingDirectory $Root `
+        -WindowStyle Hidden
+
+    Start-Sleep -Seconds 2
+    Start-Process "http://127.0.0.1:8766/"
+    Write-Host "Line Monitor UI: http://127.0.0.1:8766/"
 }
 
-Write-Host "Restarting local UI..."
-Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" |
-    Where-Object { $_.CommandLine -like "*local_vercel_preview.js*" -and $_.CommandLine -like "*$Root*" } |
-    ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+Start-LocalUi
 
-Start-Process -FilePath $Node `
-    -ArgumentList "local_vercel_preview.js" `
-    -WorkingDirectory $Root `
-    -WindowStyle Hidden
+while ($true) {
+    $StartedAt = Get-Date
+    Write-Host ""
+    Write-Host "[$($StartedAt.ToString('yyyy-MM-dd HH:mm:ss'))] Running full line monitor..."
 
-Start-Sleep -Seconds 2
-Start-Process "http://127.0.0.1:8766/"
+    try {
+        & $Python "run_line_monitor.py"
+        if ($LASTEXITCODE -ne 0) {
+            throw "run_line_monitor.py failed with exit code $LASTEXITCODE"
+        }
+        $FinishedAt = Get-Date
+        $Duration = [Math]::Round(($FinishedAt - $StartedAt).TotalSeconds, 1)
+        Write-Host "[$($FinishedAt.ToString('yyyy-MM-dd HH:mm:ss'))] Run finished in $Duration seconds."
+    } catch {
+        $FailedAt = Get-Date
+        Write-Host "[$($FailedAt.ToString('yyyy-MM-dd HH:mm:ss'))] Run failed: $($_.Exception.Message)" -ForegroundColor Red
+    }
 
-Write-Host "Line Monitor UI: http://127.0.0.1:8766/"
+    $NextRun = (Get-Date).AddMinutes(10)
+    Write-Host "Next run: $($NextRun.ToString('yyyy-MM-dd HH:mm:ss')). Keep this window open. Press Ctrl+C to stop."
+    Start-Sleep -Seconds 600
+}

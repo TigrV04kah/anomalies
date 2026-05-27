@@ -247,7 +247,7 @@ function valueOrDash(value) {
 }
 
 function helpFor(item) {
-  return CHECK_HELP[item.check_name] || {
+  return CHECK_HELP[item.check_name] || Object.values(CHECK_HELP).find(help => help.title === item.check_title) || {
     title: item.check_title || item.check_name || "Anomaly",
     short: "Описание проверки еще не задано.",
     long: "Для этой проверки пока нет подробного описания."

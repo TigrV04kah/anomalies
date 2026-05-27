@@ -82,7 +82,7 @@ Object.assign(CHECK_HELP, {
   football_stat_relations: {
     title: "Football Stat Relations",
     short: "Проверяет согласованность ударной статистики в футболе.",
-    long: "Для Football period 0 центральный тотал выбирается как линия Total_B/Total_M с вероятностью ближе всего к 50%. Центральный тотал ShotsOnTarget не должен быть больше ShotByGates. Также фаворит ниже 1.8 по ShotsOnTarget или ShotByGates не должен становиться аутсайдером по GoalFromGates."
+    long: "Для Football period 0 центральный тотал выбирается как линия Total_B/Total_M с вероятностью ближе всего к 50%. Центральный тотал ShotsOnTarget не должен быть больше ShotByGates. Также фаворит ниже 1.8 по ShotsOnTarget или ShotByGates должен быть аутсайдером по GoalFromGates, потому что команда, которая больше бьет, обычно реже выполняет удары от ворот."
   },
   period_conflicts: {
     title: "Period Conflicts",

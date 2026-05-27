@@ -524,13 +524,17 @@ def analyze_football_stat_relations(df):
                 source = group.loc[source_type]
                 target = group.loc["GoalFromGates"]
                 source_fav = get_match_favorite_by_coef_zone(source.get("p1"), source.get("p2"))
-                if not stat_conflict_by_coef_direction(source_fav, target.get("p1"), target.get("p2")):
+                if source_fav not in {"p1", "p2"} or pd.isna(target.get("p1")) or pd.isna(target.get("p2")):
+                    continue
+                source_target_coef = target.get("p1") if source_fav == "p1" else target.get("p2")
+                opponent_target_coef = target.get("p2") if source_fav == "p1" else target.get("p1")
+                if source_target_coef > opponent_target_coef:
                     continue
                 target_fav = "p1" if target.get("p1") < target.get("p2") else "p2"
                 rows.append(add_game_info({
                     "Status": "DIFF",
                     "MainGameId": main_game_id,
-                    "Rule": f"{source_type} favorite is outsider on GoalFromGates",
+                    "Rule": f"{source_type} favorite is not outsider on GoalFromGates",
                     "SourceGameType": source_type,
                     "TargetGameType": "GoalFromGates",
                     "SourceGameId": source.get("GameId"),

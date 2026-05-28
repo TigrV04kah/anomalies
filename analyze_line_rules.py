@@ -1,6 +1,7 @@
 import csv
 import json
 import zipfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 from pathlib import Path
 
@@ -19,6 +20,29 @@ FOOTBALL_STAT_TYPES = [
 FOOTBALL_INVERTED = {"Save", "GoalFromGates"}
 SHOT_RELATION_TYPES = {"ShotsOnTarget", "ShotByGates", "GoalFromGates"}
 TOTAL_CENTER_EVENTS = {"Total_B", "Total_M"}
+BASKETBALL_PLAYER_EVENT_TYPES = {
+    "points": {"total_player_B", "total_player_M"},
+    "rebounds": {"Player_podbor_total_B", "Player_podbor_total_M"},
+    "assists": {"Player_peredacha_total_B", "Player_peredacha_total_M"},
+    "points_rebounds": {"player_points_rebounds_tb", "player_points_rebounds_tm"},
+    "points_assists": {"player_points_assists_tb", "player_points_assists_tm"},
+    "rebounds_assists": {"plaeyr_rebounds_assists_tb", "plaeyr_rebounds_assists_tm"},
+    "points_rebounds_assists": {
+        "player_points_rebounds_assists_tb",
+        "player_points_rebounds_assists_tm",
+        "player_points_rebounds_transfer_tb",
+        "player_points_rebounds_transfer_tm",
+        "player_points_rebounds_pass_tb",
+        "player_points_rebounds_pass_tm",
+    },
+}
+BASKETBALL_EVENT_STAT = {
+    event_type: stat
+    for stat, event_types in BASKETBALL_PLAYER_EVENT_TYPES.items()
+    for event_type in event_types
+}
+BASKETBALL_PLAYER_POINT_EVENTS = BASKETBALL_PLAYER_EVENT_TYPES["points"]
+BASKETBALL_PERIOD_EXPECTATIONS = {1: 4, 2: 4, 3: 4, 4: 4, 11: 2, 12: 2}
 PERIOD_DEVIATION_SPORT_PERIODS = {
     "AustralianFootball": (1, 2, 3, 4),
     "Basketball": (1, 2, 3, 4),
@@ -700,11 +724,278 @@ def analyze_tennis_what_earlear(df):
     return rows
 
 
+def basketball_period_delta_limit(full_param):
+    if pd.isna(full_param):
+        return None
+    if full_param < 5:
+        return 0.5
+    if full_param < 10:
+        return 1.0
+    if full_param < 15:
+        return 1.5
+    if full_param < 20:
+        return 2.0
+    if full_param < 25:
+        return 2.5
+    if full_param < 30:
+        return 3.0
+    return 3.5
+
+
+def basketball_monotonicity_param_tolerance(min_param):
+    if pd.isna(min_param):
+        return 0.0
+    if min_param < 10:
+        return 1.0
+    if min_param < 20:
+        return 1.5
+    if min_param < 30:
+        return 2.0
+    if min_param > 30:
+        return 2.5
+    return 0.0
+
+
+def basketball_allowed_monotonicity_gap(left_param, left_coef, right_param, right_coef):
+    if any(pd.isna(value) for value in [left_param, left_coef, right_param, right_coef]):
+        return False
+    param_diff = abs(right_param - left_param)
+    tolerance = basketball_monotonicity_param_tolerance(min(left_param, right_param))
+    if tolerance <= 0 or param_diff > tolerance:
+        return False
+    probability_diff = abs(1 / left_coef - 1 / right_coef)
+    return probability_diff <= 0.03
+
+
+def basketball_player_centers(df):
+    required_columns = {"SportName", "GameType", "EventType", "Player", "MainGameId", "Period", "Coef", "Param"}
+    if df.empty or not required_columns.issubset(df.columns):
+        return pd.DataFrame()
+
+    basketball = df[
+        (df["SportName"] == "Basketball") &
+        (df["GameType"] == "GoalPlayers") &
+        (df["Player"].fillna("").astype(str).str.strip() != "") &
+        (df["Coef"] > 1) &
+        (df["Param"].notna())
+    ].copy()
+    if basketball.empty:
+        return pd.DataFrame()
+
+    point_players = basketball[
+        basketball["EventType"].isin(BASKETBALL_PLAYER_POINT_EVENTS)
+    ][["MainGameId", "Player"]].drop_duplicates()
+    if point_players.empty:
+        return pd.DataFrame()
+
+    centers = basketball[basketball["EventType"].isin(BASKETBALL_EVENT_STAT)].merge(
+        point_players,
+        on=["MainGameId", "Player"],
+        how="inner",
+    )
+    if centers.empty:
+        return pd.DataFrame()
+
+    centers["Stat"] = centers["EventType"].map(BASKETBALL_EVENT_STAT)
+    centers["ProbabilityDistance"] = (1 / centers["Coef"] - 0.5).abs()
+    centers = centers.sort_values(
+        ["MainGameId", "Player", "Period", "Stat", "ProbabilityDistance", "Coef", "Param"],
+        kind="mergesort",
+    )
+    return centers.drop_duplicates(["MainGameId", "Player", "Period", "Stat"])
+
+
+def analyze_basketball_player_periods(centers):
+    if centers.empty:
+        return []
+    points = centers[centers["Stat"] == "points"].copy()
+    if points.empty:
+        return []
+    by_key = {
+        (row["MainGameId"], row["Player"], row["Period"]): row
+        for _, row in points.iterrows()
+    }
+    rows = []
+    for (main_game_id, player, period), period_row in by_key.items():
+        if period not in BASKETBALL_PERIOD_EXPECTATIONS:
+            continue
+        full_row = by_key.get((main_game_id, player, 0))
+        if full_row is None:
+            continue
+        divider = BASKETBALL_PERIOD_EXPECTATIONS[period]
+        expected = full_row["Param"] / divider
+        delta = period_row["Param"] - expected
+        delta_limit = basketball_period_delta_limit(full_row["Param"])
+        if delta_limit is None or abs(delta) <= delta_limit:
+            continue
+        rows.append({
+            "Status": "DIFF",
+            "Rule": "player points period center deviates from full game share",
+            "MainGameId": main_game_id,
+            "GameId": period_row.get("GameId"),
+            "GameType": period_row.get("GameType"),
+            "Sport": period_row.get("SportName"),
+            "Champ": period_row.get("Champ"),
+            "Opp1": period_row.get("Opp1"),
+            "Opp2": period_row.get("Opp2"),
+            "Start": period_row.get("Start"),
+            "Player": player,
+            "Stat": "points",
+            "EventType": period_row.get("EventType"),
+            "Period": period,
+            "PeriodParam": round(period_row["Param"], 4),
+            "PeriodCoef": round(period_row["Coef"], 4),
+            "FullGameId": full_row.get("GameId"),
+            "FullParam": round(full_row["Param"], 4),
+            "FullCoef": round(full_row["Coef"], 4),
+            "ExpectedParam": round(expected, 4),
+            "Delta": round(delta, 4),
+            "DeltaLimit": round(delta_limit, 4),
+        })
+    return rows
+
+
+def analyze_basketball_player_monotonicity(df):
+    required_columns = {"SportName", "GameType", "EventType", "Player", "MainGameId", "GameId", "Period", "Coef", "Param"}
+    if df.empty or not required_columns.issubset(df.columns):
+        return []
+
+    basketball = df[
+        (df["SportName"] == "Basketball") &
+        (df["GameType"] == "GoalPlayers") &
+        (df["Player"].fillna("").astype(str).str.strip() != "") &
+        (df["EventType"].isin(BASKETBALL_EVENT_STAT)) &
+        (df["Coef"] > 1) &
+        (df["Param"].notna())
+    ].copy()
+    if basketball.empty:
+        return []
+
+    point_players = basketball[
+        basketball["EventType"].isin(BASKETBALL_PLAYER_POINT_EVENTS)
+    ][["MainGameId", "Player"]].drop_duplicates()
+    basketball = basketball.merge(point_players, on=["MainGameId", "Player"], how="inner")
+    if basketball.empty:
+        return []
+
+    rows = []
+    group_columns = ["MainGameId", "GameId", "Period", "EventType", "Player"]
+    for _, group in basketball.groupby(group_columns, dropna=False):
+        ordered = group.sort_values(["Param", "Coef"], kind="mergesort")
+        records = list(ordered.to_dict("records"))
+        if len(records) < 2:
+            continue
+        event_type = records[0].get("EventType")
+        is_over = str(event_type).endswith("_B") or str(event_type).endswith("_tb")
+        is_under = str(event_type).endswith("_M") or str(event_type).endswith("_tm")
+        if not is_over and not is_under:
+            continue
+        for left, right in zip(records, records[1:]):
+            left_coef = left.get("Coef")
+            right_coef = right.get("Coef")
+            violation = (is_over and right_coef < left_coef) or (is_under and right_coef > left_coef)
+            if not violation:
+                continue
+            if basketball_allowed_monotonicity_gap(left.get("Param"), left_coef, right.get("Param"), right_coef):
+                continue
+            probability_diff = abs(1 / left_coef - 1 / right_coef)
+            rows.append({
+                "Status": "DIFF",
+                "Rule": "player total coefficient monotonicity violation",
+                "MainGameId": left.get("MainGameId"),
+                "GameId": left.get("GameId"),
+                "GameType": left.get("GameType"),
+                "Sport": left.get("SportName"),
+                "Champ": left.get("Champ"),
+                "Opp1": left.get("Opp1"),
+                "Opp2": left.get("Opp2"),
+                "Start": left.get("Start"),
+                "Player": left.get("Player"),
+                "Stat": BASKETBALL_EVENT_STAT.get(event_type),
+                "EventType": event_type,
+                "Period": left.get("Period"),
+                "Direction": "over" if is_over else "under",
+                "LeftParam": round(left.get("Param"), 4),
+                "LeftCoef": round(left_coef, 4),
+                "RightParam": round(right.get("Param"), 4),
+                "RightCoef": round(right_coef, 4),
+                "ParamDiff": round(abs(right.get("Param") - left.get("Param")), 4),
+                "ProbabilityDiff": round(probability_diff, 6),
+            })
+    return rows
+
+
+def analyze_basketball_player_combinations(centers):
+    if centers.empty:
+        return []
+    period_zero = centers[centers["Period"] == 0].copy()
+    if period_zero.empty:
+        return []
+    by_key = {
+        (row["MainGameId"], row["Player"], row["Stat"]): row
+        for _, row in period_zero.iterrows()
+    }
+    combos = {
+        "points_rebounds": ("points", "rebounds"),
+        "points_assists": ("points", "assists"),
+        "rebounds_assists": ("rebounds", "assists"),
+        "points_rebounds_assists": ("points", "rebounds", "assists"),
+    }
+    rows = []
+    for (main_game_id, player, stat), combo_row in by_key.items():
+        if stat not in combos:
+            continue
+        components = combos[stat]
+        component_rows = [by_key.get((main_game_id, player, component)) for component in components]
+        if any(row is None for row in component_rows):
+            continue
+        expected = sum(row["Param"] for row in component_rows)
+        delta = combo_row["Param"] - expected
+        if abs(delta) <= 1.5:
+            continue
+        row = {
+            "Status": "DIFF",
+            "Rule": "player combined stat center differs from component centers",
+            "MainGameId": main_game_id,
+            "GameId": combo_row.get("GameId"),
+            "GameType": combo_row.get("GameType"),
+            "Sport": combo_row.get("SportName"),
+            "Champ": combo_row.get("Champ"),
+            "Opp1": combo_row.get("Opp1"),
+            "Opp2": combo_row.get("Opp2"),
+            "Start": combo_row.get("Start"),
+            "Player": player,
+            "Stat": stat,
+            "EventType": combo_row.get("EventType"),
+            "Period": 0,
+            "CenterParam": round(combo_row["Param"], 4),
+            "CenterCoef": round(combo_row["Coef"], 4),
+            "ExpectedParam": round(expected, 4),
+            "Delta": round(delta, 4),
+            "DeltaLimit": 1.5,
+        }
+        for component, component_row in zip(components, component_rows):
+            row[f"{component}Param"] = round(component_row["Param"], 4)
+            row[f"{component}Coef"] = round(component_row["Coef"], 4)
+        rows.append(row)
+    return rows
+
+
+def analyze_basketball_players(df):
+    centers = basketball_player_centers(df)
+    rows = []
+    rows.extend(analyze_basketball_player_periods(centers))
+    rows.extend(analyze_basketball_player_monotonicity(df))
+    rows.extend(analyze_basketball_player_combinations(centers))
+    return rows
+
+
 CHECKS = {
     "period_deviations_average": analyze_period_deviations_average,
     "total_deviations_average": analyze_total_deviations_average,
     "stat_conflicts": analyze_stat_conflicts,
     "football_stat_relations": analyze_football_stat_relations,
+    "basketball_players": analyze_basketball_players,
     "period_conflicts": analyze_period_conflicts,
     "tennis_special_what_earlear": analyze_tennis_what_earlear,
 }
@@ -716,8 +1007,13 @@ def analyze_all_checks(snapshot, reports_dir):
     reports_dir = Path(reports_dir)
     summaries = {}
     csvs = {}
-    for check_name, fn in CHECKS.items():
-        rows = fn(df)
+    with ThreadPoolExecutor(max_workers=len(CHECKS)) as executor:
+        futures = {executor.submit(fn, df): check_name for check_name, fn in CHECKS.items()}
+        results = {}
+        for future in as_completed(futures):
+            results[futures[future]] = future.result()
+    for check_name in CHECKS:
+        rows = results.get(check_name, [])
         output = reports_dir / f"{check_name}.csv"
         write_csv(output, rows)
         summaries[check_name] = summary(rows, output)

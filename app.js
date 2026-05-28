@@ -84,6 +84,11 @@ Object.assign(CHECK_HELP, {
     short: "Проверяет согласованность ударной статистики в футболе.",
     long: "Для Football period 0 центральный тотал выбирается как линия Total_B/Total_M с вероятностью ближе всего к 50%. Центральный тотал ShotsOnTarget не должен быть больше ShotByGates. Также фаворит ниже 1.8 по ShotsOnTarget или ShotByGates должен быть аутсайдером по GoalFromGates, потому что команда, которая больше бьет, обычно реже выполняет удары от ворот."
   },
+  basketball_players: {
+    title: "basketball players",
+    short: "Проверяет баскетбольную статистику игроков: очки по периодам, монотонность тоталов и суммы составных рынков.",
+    long: "Берутся только Basketball, GameType GoalPlayers и игроки, у которых есть тотал очков. Центральная линия выбирается по коэффициенту с вероятностью ближе всего к 50%. Для очков четверти 1-4 сравниваются с периодом 0 / 4, половины 11-12 - с периодом 0 / 2. Также проверяется монотонность тоталов больше/меньше с допуском 3% по вероятности для близких параметров и согласованность очки+подборы, очки+передачи, подборы+передачи, очки+подборы+передачи с отдельными компонентами."
+  },
   period_conflicts: {
     title: "Period Conflicts",
     short: "Проверяет, что фаворит матча остается тем же фаворитом в периодах.",
@@ -290,6 +295,9 @@ function describeAnomaly(item) {
   if (item.check_name === "football_stat_relations") {
     return `${valueOrDash(payload.Rule)}. ${valueOrDash(payload.SourceGameType)} сравнивается с ${valueOrDash(payload.TargetGameType)}.`;
   }
+  if (item.check_name === "basketball_players") {
+    return `${valueOrDash(payload.Rule)}. Игрок: ${valueOrDash(payload.Player)}, рынок: ${valueOrDash(payload.EventType || payload.Stat)}, период: ${valueOrDash(payload.Period)}.`;
+  }
   if (item.check_name === "tennis_special_what_earlear") {
     return `Тоталы Ace (${valueOrDash(payload.Param_Ace)}) и Breaks (${valueOrDash(payload.Param_Breaks)}) конфликтуют с коэффициентами рынка 'что раньше'.`;
   }
@@ -372,6 +380,29 @@ function renderDetails(container, item) {
     appendTable(container, ["Source center", "Target center", "Source coef", "Target coef"], [
       [payload.SourceCenterParam, payload.TargetCenterParam, payload.SourceCenterCoef, payload.TargetCenterCoef]
     ]);
+  } else if (item.check_name === "basketball_players") {
+    appendTable(container, ["Rule", "Player", "Stat", "EventType", "Period"], [
+      [payload.Rule, payload.Player, payload.Stat, payload.EventType, payload.Period]
+    ]);
+    if (payload.Rule === "player points period center deviates from full game share") {
+      appendTable(container, ["Period param", "Period coef", "Full param", "Full coef", "Expected", "Delta", "Limit"], [
+        [payload.PeriodParam, payload.PeriodCoef, payload.FullParam, payload.FullCoef, payload.ExpectedParam, payload.Delta, payload.DeltaLimit]
+      ]);
+      appendTable(container, ["Period game", "Full game"], [
+        [payload.GameId, payload.FullGameId]
+      ]);
+    } else if (payload.Rule === "player total coefficient monotonicity violation") {
+      appendTable(container, ["Direction", "Left param", "Left coef", "Right param", "Right coef", "Param diff", "Probability diff"], [
+        [payload.Direction, payload.LeftParam, payload.LeftCoef, payload.RightParam, payload.RightCoef, payload.ParamDiff, payload.ProbabilityDiff]
+      ]);
+    } else if (payload.Rule === "player combined stat center differs from component centers") {
+      appendTable(container, ["Center", "Coef", "Expected", "Delta", "Limit"], [
+        [payload.CenterParam, payload.CenterCoef, payload.ExpectedParam, payload.Delta, payload.DeltaLimit]
+      ]);
+      appendTable(container, ["Points", "Rebounds", "Assists"], [
+        [payload.pointsParam, payload.reboundsParam, payload.assistsParam]
+      ]);
+    }
   } else if (item.check_name === "tennis_special_what_earlear") {
     appendTable(container, ["Period", "Ace total", "Breaks total", "Ace before break", "Break before ace"], [
       [payload.Period, payload.Param_Ace, payload.Param_Breaks, payload.koef_ace_before_break, payload.koef_break_before_ace]

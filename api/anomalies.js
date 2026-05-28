@@ -13,6 +13,7 @@ const ACTIVE_CHECK_TITLES = [
   "Total = Ind total 1 + Ind Total 2 (average)",
   "Stat Conflicts",
   "Football Stat Relations",
+  "basketball players",
   "Period Conflicts",
   "Tennis Special. What Earlear"
 ];

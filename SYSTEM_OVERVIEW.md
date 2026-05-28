@@ -72,6 +72,7 @@ Current mode:
 - incremental mode exists only for debugging via `--incremental`;
 - full snapshots are stored in `snapshots/current_line_snapshot.zip`;
 - state is stored in `linegame_state.json`.
+- checks run in parallel against the already loaded snapshot dataframe.
 
 The full-line approach is intentional: old events can change, so checking only new events is not reliable enough.
 
@@ -323,6 +324,64 @@ Part 2: relation to goal kicks.
 - If a team is favorite below `1.8` on `ShotsOnTarget` or `ShotByGates`, it should be the outsider on `GoalFromGates`.
 - This direction is intentionally inverted: the team that attacks/shoots more usually should have fewer goal kicks.
 - Anomaly appears when the shot-stat favorite is not the outsider on `GoalFromGates`.
+
+### Basketball Players
+
+Internal name:
+
+```text
+basketball_players
+```
+
+Purpose:
+
+Checks player statistics in basketball markets.
+
+Scope:
+
+- only `SportName = Basketball`;
+- only `GameType = GoalPlayers`;
+- only players that have a points total market;
+- central line is the line closest to 50% implied probability.
+
+Period checks:
+
+- points in quarters `1`, `2`, `3`, `4` are compared with full-game points divided by `4`;
+- points in halves `11`, `12` are compared with full-game points divided by `2`;
+- anomaly appears when the absolute delta is greater than the threshold below.
+
+| Full-game points parameter | Allowed delta |
+|---:|---:|
+| `< 5` | `0.5` |
+| `< 10` | `1.0` |
+| `< 15` | `1.5` |
+| `< 20` | `2.0` |
+| `< 25` | `2.5` |
+| `< 30` | `3.0` |
+| `>= 30` | `3.5` |
+
+Monotonicity checks:
+
+- for `Total_B` style player markets, coefficient should increase as `Param` increases;
+- for `Total_M` style player markets, coefficient should decrease as `Param` increases;
+- close parameter steps are ignored if implied probability differs by no more than `3%`.
+
+Allowed close-step exceptions:
+
+| Minimum parameter | Max parameter diff |
+|---:|---:|
+| `< 10` | `1.0` |
+| `< 20` | `1.5` |
+| `< 30` | `2.0` |
+| `> 30` | `2.5` |
+
+Combination checks:
+
+- `points_rebounds` should be close to `points + rebounds`;
+- `points_assists` should be close to `points + assists`;
+- `rebounds_assists` should be close to `rebounds + assists`;
+- `points_rebounds_assists` should be close to `points + rebounds + assists`;
+- current combination delta threshold is `1.5`.
 
 ### Period Conflicts
 

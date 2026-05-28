@@ -290,6 +290,9 @@ function describeAnomaly(item) {
     return `Значение периода 0 (${valueOrDash(payload.P0)}) сравнивается с суммой периодов ${periods.join("+")} (${periodValues}). Дельта: ${valueOrDash(payload.Delta)}, критический порог: ${valueOrDash(payload.CriticalDelta)}.`;
   }
   if (item.check_name === "stat_conflicts") {
+    if (payload.ExpectedStatRole === "outsider") {
+      return `Фаворит матча ${valueOrDash(payload.MatchFavorite)} должен быть аутсайдером по ${valueOrDash(payload.StatType)}, но коэффициент на него ниже коэффициента соперника.`;
+    }
     return `Фаворит матча ${valueOrDash(payload.MatchFavorite)}, а фаворит статистики ${valueOrDash(payload.StatType)} - ${valueOrDash(payload.StatFavorite)}. Это противоположные стороны.`;
   }
   if (item.check_name === "football_stat_relations") {
@@ -367,8 +370,8 @@ function renderDetails(container, item) {
       [payload.GID0, ...periods.map(period => payload[`GID${period}`])]
     ]);
   } else if (item.check_name === "stat_conflicts") {
-    appendTable(container, ["Stat", "Match fav", "Stat fav", "Match P1", "Match P2", "Stat P1", "Stat P2"], [
-      [payload.StatType, payload.MatchFavorite, payload.StatFavorite, payload.MatchCoefP1, payload.MatchCoefP2, payload.StatCoefP1, payload.StatCoefP2]
+    appendTable(container, ["Stat", "Expected role", "Match fav", "Stat fav", "Match P1", "Match P2", "Stat P1", "Stat P2"], [
+      [payload.StatType, payload.ExpectedStatRole, payload.MatchFavorite, payload.StatFavorite, payload.MatchCoefP1, payload.MatchCoefP2, payload.StatCoefP1, payload.StatCoefP2]
     ]);
   } else if (item.check_name === "football_stat_relations") {
     appendTable(container, ["Rule", "Source", "Target"], [

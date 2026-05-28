@@ -280,6 +280,7 @@ Stat rule:
 - if match favorite is `p1`, then the stat coefficient for `p1` should not be higher than `p2`;
 - if match favorite is `p2`, then the stat coefficient for `p2` should not be higher than `p1`;
 - if the favorite side has the higher stat coefficient, this is `DIFF`.
+- for inverted markets `Save` and `GoalFromGates`, the logic is reversed: the match favorite should be the outsider by this statistic, so its statistic coefficient should be higher than the opponent coefficient.
 
 Checked football stat types:
 

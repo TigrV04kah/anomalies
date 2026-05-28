@@ -15,7 +15,7 @@
     "check_name": "stat_conflicts",
     "check_title": "Stat Conflicts",
     "short_description": "Проверяет конфликт между фаворитом матча и фаворитом по статистическому рынку.",
-    "full_description": "Сначала определяется фаворит матча по рынкам p1/p2. Потом определяется фаворит по статистике: Corners, Tackles, ShotsOnTarget, ShotByGates, Save, GoalFromGates, PossessionPercentage. Если фавориты противоположны, строка считается аномалией. Для Save и GoalFromGates логика инвертирована."
+    "full_description": "Сначала определяется фаворит матча по рынкам p1/p2. Потом проверяется статистика: Corners, Tackles, ShotsOnTarget, ShotByGates, Save, GoalFromGates, PossessionPercentage. Для обычной статистики фаворит матча должен иметь коэффициент по статистике ниже соперника. Для Save и GoalFromGates логика обратная: фаворит матча должен быть аутсайдером по этой статистике, то есть его коэффициент должен быть выше соперника. Для Tackles проверка включается только если фаворит матча имеет коэффициент 1.4 или ниже."
   },
   {
     "check_name": "football_stat_relations",

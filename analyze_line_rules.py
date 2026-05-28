@@ -373,11 +373,13 @@ def get_match_favorite_by_coef_zone(p1, p2):
     return "noone"
 
 
-def stat_conflict_by_coef_direction(match_fav, stat_p1, stat_p2):
+def stat_conflict_by_coef_direction(match_fav, stat_p1, stat_p2, stat_type):
     if match_fav not in {"p1", "p2"} or pd.isna(stat_p1) or pd.isna(stat_p2):
         return False
     favorite_stat_coef = stat_p1 if match_fav == "p1" else stat_p2
     opponent_stat_coef = stat_p2 if match_fav == "p1" else stat_p1
+    if stat_type in FOOTBALL_INVERTED:
+        return favorite_stat_coef < opponent_stat_coef
     return favorite_stat_coef > opponent_stat_coef
 
 
@@ -424,7 +426,7 @@ def analyze_stat_conflicts(df):
         match_fav = get_match_favorite_by_coef_zone(match_p1, match_p2)
         stat_p1 = group[group["EventType"] == "p1"]["Coef"].iloc[0] if "p1" in set(group["EventType"]) else None
         stat_p2 = group[group["EventType"] == "p2"]["Coef"].iloc[0] if "p2" in set(group["EventType"]) else None
-        if not stat_conflict_by_coef_direction(match_fav, stat_p1, stat_p2):
+        if not stat_conflict_by_coef_direction(match_fav, stat_p1, stat_p2, stat_type):
             continue
         if stat_type == "Tackles":
             favorite_coef = match_p1 if match_fav == "p1" else match_p2
@@ -447,6 +449,7 @@ def analyze_stat_conflicts(df):
             "StatCoefP2": stat_p2,
             "MatchFavorite": match_fav,
             "StatFavorite": stat_fav,
+            "ExpectedStatRole": "outsider" if stat_type in FOOTBALL_INVERTED else "favorite",
         })
     return rows
 

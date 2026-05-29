@@ -20,6 +20,9 @@ FOOTBALL_STAT_TYPES = [
 FOOTBALL_INVERTED = {"Save", "GoalFromGates"}
 SHOT_RELATION_TYPES = {"ShotsOnTarget", "ShotByGates", "GoalFromGates"}
 TOTAL_CENTER_EVENTS = {"Total_B", "Total_M"}
+HANDICAP_PERIOD_EVENTS = ("Fora_1", "Fora_2")
+HANDICAP_PERIOD_TARGET_COEF = 1.95
+HANDICAP_PERIOD_DELTA_THRESHOLD = 1.0
 BASKETBALL_PLAYER_EVENT_TYPES = {
     "points": {"total_player_B", "total_player_M"},
     "rebounds": {"Player_podbor_total_B", "Player_podbor_total_M"},
@@ -339,6 +342,88 @@ def analyze_total_deviations_average(df):
                     "Delta": round(delta, 4),
                 })
     return sorted(rows, key=lambda row: float(row["Delta"]), reverse=True)
+
+
+def closest_handicap_period_lines(df):
+    required_columns = {"SportName", "GameType", "Period", "EventType", "Coef", "Param"}
+    if df.empty or not required_columns.issubset(df.columns):
+        return pd.DataFrame()
+
+    rows = df[
+        (df["SportName"].isin(PERIOD_DEVIATION_SPORT_PERIODS)) &
+        (df["GameType"] == "Main") &
+        (df["EventType"].isin(HANDICAP_PERIOD_EVENTS)) &
+        (df["Coef"] > 1) &
+        (df["Param"].notna())
+    ].copy()
+    if rows.empty:
+        return pd.DataFrame()
+
+    rows["CoefDistance"] = (rows["Coef"] - HANDICAP_PERIOD_TARGET_COEF).abs()
+    rows = rows.sort_values(
+        ["MainGameId", "Period", "EventType", "CoefDistance", "Coef", "Param"],
+        kind="mergesort",
+    )
+    return rows.drop_duplicates(["MainGameId", "Period", "EventType"])
+
+
+def handicap_period_groups_for_game(sport, periods):
+    groups = []
+    required_periods = PERIOD_DEVIATION_SPORT_PERIODS.get(sport)
+    if required_periods and set(required_periods).issubset(periods):
+        groups.append(("regular", required_periods))
+    if set(PERIOD_DEVIATION_HALF_PERIODS).issubset(periods):
+        groups.append(("halves", PERIOD_DEVIATION_HALF_PERIODS))
+    return groups
+
+
+def analyze_handicap_period_deltas(df):
+    closest = closest_handicap_period_lines(df)
+    if closest.empty:
+        return []
+
+    rows = []
+    for main_game_id, game in closest.groupby("MainGameId", dropna=False):
+        first = game.iloc[0]
+        available_periods = set(game["Period"].dropna().astype(int))
+        for group_name, periods in handicap_period_groups_for_game(first["SportName"], available_periods):
+            for event_type in HANDICAP_PERIOD_EVENTS:
+                side = game[(game["EventType"] == event_type) & (game["Period"].isin(periods))].copy()
+                if side.empty:
+                    continue
+                by_period = {int(row["Period"]): row for _, row in side.iterrows()}
+                if not set(periods).issubset(by_period):
+                    continue
+                params = [by_period[period]["Param"] for period in periods]
+                coefs = [by_period[period]["Coef"] for period in periods]
+                delta = max(params) - min(params)
+                if delta <= HANDICAP_PERIOD_DELTA_THRESHOLD:
+                    continue
+                row = {
+                    "Status": "DIFF",
+                    "Rule": "central handicap differs between periods",
+                    "MainGameId": main_game_id,
+                    "GameType": first.get("GameType"),
+                    "Sport": first.get("SportName"),
+                    "Champ": first.get("Champ"),
+                    "Opp1": first.get("Opp1"),
+                    "Opp2": first.get("Opp2"),
+                    "Start": first.get("Start"),
+                    "Group": group_name,
+                    "Periods": "+".join(str(period) for period in periods),
+                    "EventType": event_type,
+                    "MinParam": round(min(params), 4),
+                    "MaxParam": round(max(params), 4),
+                    "Delta": round(delta, 4),
+                    "CriticalDelta": HANDICAP_PERIOD_DELTA_THRESHOLD,
+                    "TargetCoef": HANDICAP_PERIOD_TARGET_COEF,
+                }
+                for period, param, coef in zip(periods, params, coefs):
+                    row[f"P{period}GameId"] = by_period[period].get("GameId")
+                    row[f"P{period}Param"] = round(param, 4)
+                    row[f"P{period}Coef"] = round(coef, 4)
+                rows.append(row)
+    return sorted(rows, key=lambda item: item["Delta"], reverse=True)
 
 
 def get_match_favorite(p1, p2, threshold=0.10, max_coef=2.2):
@@ -996,6 +1081,7 @@ def analyze_basketball_players(df):
 CHECKS = {
     "period_deviations_average": analyze_period_deviations_average,
     "total_deviations_average": analyze_total_deviations_average,
+    "handicap_period_deltas": analyze_handicap_period_deltas,
     "stat_conflicts": analyze_stat_conflicts,
     "football_stat_relations": analyze_football_stat_relations,
     "basketball_players": analyze_basketball_players,

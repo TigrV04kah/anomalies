@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 CHECK_TITLES = {
     "period_deviations_average": "Main = Period (average)",
     "total_deviations_average": "Total = Ind total 1 + Ind Total 2 (average)",
+    "handicap_period_deltas": "Handicap Period Deltas",
     "stat_conflicts": "Stat Conflicts",
     "football_stat_relations": "Football Stat Relations",
     "basketball_players": "basketball players",
@@ -44,6 +45,14 @@ def stable_key(check_name, row):
             str(row.get("GameType", "")),
             str(row.get("Period", "")),
             str(row.get("Type", "")),
+        ])
+    if check_name == "handicap_period_deltas":
+        return "|".join([
+            check_name,
+            str(row.get("MainGameId", "")),
+            str(row.get("Group", "")),
+            str(row.get("EventType", "")),
+            str(row.get("Periods", "")),
         ])
     if check_name == "stat_conflicts":
         return "|".join([

@@ -258,6 +258,37 @@ Line selection:
 - for each `MainGameId`, `GameType`, `Period`, and side, choose the line closest to coefficient `1.95`;
 - anomaly if the delta is greater than `1.5`.
 
+### Handicap Period Deltas
+
+Internal name:
+
+```text
+handicap_period_deltas
+```
+
+Purpose:
+
+Checks whether central handicap parameters differ too much between periods.
+
+Scope:
+
+- only supported sports from the period mapping;
+- only `GameType = Main`;
+- only `Fora_1` and `Fora_2`;
+- `Fora_1` and `Fora_2` are checked separately;
+- central handicap line is selected by coefficient closest to `1.95`;
+- parameter sign is preserved, so `-2` and `2` are different values.
+
+Period groups:
+
+- regular periods use the same mapping as `Main = Period (average)`;
+- halves `11+12` are checked separately when both halves exist.
+
+Anomaly:
+
+- calculate `Delta = MaxParam - MinParam` inside the period group;
+- row is `DIFF` when `Delta > 1.0`.
+
 ### Stat Conflicts
 
 Internal name:

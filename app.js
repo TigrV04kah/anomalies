@@ -74,11 +74,6 @@ Object.assign(CHECK_HELP, {
     short: "Проверяет, согласован ли общий тотал с суммой индивидуальных тоталов команд.",
     long: "Для каждого периода и GameType выбирается линия с коэффициентом, ближайшим к 1.95. После этого общий Total сравнивается с IndTotal1 + IndTotal2. Аномалия появляется, если Total больше ожидаемой суммы более чем на 1.5."
   },
-  handicap_period_deltas: {
-    title: "Handicap Period Deltas",
-    short: "Проверяет разброс центрального параметра форы между периодами.",
-    long: "Для поддерживаемых спортов отдельно по Fora_1 и Fora_2 в каждом периоде выбирается линия с коэффициентом, ближайшим к 1.95. Затем параметры сравниваются внутри полной группы периодов: футбол 1+2, хоккей 1+2+3, баскетбол 1+2+3+4 и так далее. Половины 11+12 проверяются отдельно. Знак параметра сохраняется: -2 и 2 считаются разными значениями. Аномалия появляется, если разница между максимальным и минимальным центральным параметром больше 1.0."
-  },
   stat_conflicts: {
     title: "Stat Conflicts",
     short: "Проверяет конфликт между фаворитом матча и фаворитом по статистическому рынку.",
@@ -289,9 +284,6 @@ function describeAnomaly(item) {
   if (item.check_name === "total_deviations_average") {
     return `Общий тотал ${valueOrDash(payload.Total)} не сходится с суммой индивидуальных тоталов ${valueOrDash(payload.IndTotal1)} + ${valueOrDash(payload.IndTotal2)} = ${valueOrDash(payload.Expected)}. Дельта: ${valueOrDash(payload.Delta)}.`;
   }
-  if (item.check_name === "handicap_period_deltas") {
-    return `Центральная ${valueOrDash(payload.EventType)} отличается между периодами ${valueOrDash(payload.Periods)}: min ${valueOrDash(payload.MinParam)}, max ${valueOrDash(payload.MaxParam)}, дельта ${valueOrDash(payload.Delta)}.`;
-  }
   if (item.check_name === "period_deviations_average") {
     const periods = String(payload.Periods || "1+2").split("+").filter(Boolean);
     const periodValues = periods.map(period => valueOrDash(payload[`P${period}`])).join(" + ");
@@ -368,20 +360,6 @@ function renderDetails(container, item) {
   } else if (item.check_name === "total_deviations_average") {
     appendTable(container, ["GameType", "Event side", "Period", "Total", "Ind total 1", "Ind total 2", "Expected", "Delta"], [
       [payload.GameType, payload.Type, payload.Period, payload.Total, payload.IndTotal1, payload.IndTotal2, payload.Expected, payload.Delta]
-    ]);
-  } else if (item.check_name === "handicap_period_deltas") {
-    const periods = String(payload.Periods || "").split("+").filter(Boolean);
-    appendTable(container, ["Group", "EventType", "Min", "Max", "Delta", "Critical", "Target coef"], [
-      [payload.Group, payload.EventType, payload.MinParam, payload.MaxParam, payload.Delta, payload.CriticalDelta, payload.TargetCoef]
-    ]);
-    appendTable(container, periods.map(period => `P${period} param`), [
-      periods.map(period => payload[`P${period}Param`])
-    ]);
-    appendTable(container, periods.map(period => `P${period} coef`), [
-      periods.map(period => payload[`P${period}Coef`])
-    ]);
-    appendTable(container, periods.map(period => `P${period} game`), [
-      periods.map(period => payload[`P${period}GameId`])
     ]);
   } else if (item.check_name === "period_deviations_average") {
     const periods = String(payload.Periods || "1+2").split("+").filter(Boolean);

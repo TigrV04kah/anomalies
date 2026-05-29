@@ -11,7 +11,6 @@ const ALLOWED_STATUSES = new Set([
 const ACTIVE_CHECK_TITLES = [
   "Main = Period (average)",
   "Total = Ind total 1 + Ind Total 2 (average)",
-  "Handicap Period Deltas",
   "Stat Conflicts",
   "Football Stat Relations",
   "basketball players",

@@ -8,6 +8,7 @@ CHECK_TITLES = {
     "stat_conflicts": "Stat Conflicts",
     "football_stat_relations": "Football Stat Relations",
     "basketball_players": "basketball players",
+    "basketball_q4_handicap_shift": "Basketball Q4 Handicap Shift",
     "period_conflicts": "Period Conflicts",
     "tennis_special_what_earlear": "Tennis Special. What Earlear",
 }
@@ -70,6 +71,14 @@ def stable_key(check_name, row):
             str(row.get("Player", "")),
             str(row.get("EventType", "")),
             str(row.get("Stat", "")),
+        ])
+    if check_name == "basketball_q4_handicap_shift":
+        return "|".join([
+            check_name,
+            str(row.get("MainGameId", "")),
+            str(row.get("EventType", "")),
+            str(row.get("Scenario", "")),
+            str(row.get("Q1Param", "")),
         ])
     if check_name == "tennis_special_what_earlear":
         return "|".join([

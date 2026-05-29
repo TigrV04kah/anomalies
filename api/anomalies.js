@@ -14,6 +14,7 @@ const ACTIVE_CHECK_TITLES = [
   "Stat Conflicts",
   "Football Stat Relations",
   "basketball players",
+  "Basketball Q4 Handicap Shift",
   "Period Conflicts",
   "Tennis Special. What Earlear"
 ];

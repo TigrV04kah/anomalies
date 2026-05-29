@@ -90,6 +90,11 @@ Object.assign(CHECK_HELP, {
     short: "Проверяет баскетбольную статистику игроков: очки по периодам, монотонность тоталов и суммы составных рынков.",
     long: "Берутся только Basketball, GameType GoalPlayers и игроки, у которых есть тотал очков. Центральная линия выбирается по коэффициенту с вероятностью ближе всего к 50%. Для очков четверти 1-4 сравниваются с периодом 0 / 4, половины 11-12 - с периодом 0 / 2. Также проверяется монотонность тоталов больше/меньше с допуском 3% по вероятности для близких параметров и согласованность очки+подборы, очки+передачи, подборы+передачи, очки+подборы+передачи с отдельными компонентами."
   },
+  basketball_q4_handicap_shift: {
+    title: "Basketball Q4 Handicap Shift",
+    short: "Проверяет, не слишком ли сильно фора 4-й четверти в баскетболе отличается от форы 1-й четверти.",
+    long: "Для Basketball, GameType Main, рынков Fora_1 и Fora_2 берется центральная фора 1-й четверти по коэффициенту, ближайшему к 1.95. Если такой же параметр есть в 4-й четверти, сравниваются вероятности; разница больше 25 п.п. считается аномалией. Если такого параметра в 4-й четверти нет, сравниваются центральные параметры 1-й и 4-й четверти; разница больше 4.5 очка считается аномалией."
+  },
   period_conflicts: {
     title: "Period Conflicts",
     short: "Проверяет, что фаворит матча остается тем же фаворитом в периодах.",
@@ -302,6 +307,12 @@ function describeAnomaly(item) {
   if (item.check_name === "basketball_players") {
     return `${valueOrDash(payload.Rule)}. Игрок: ${valueOrDash(payload.Player)}, рынок: ${valueOrDash(payload.EventType || payload.Stat)}, период: ${valueOrDash(payload.Period)}.`;
   }
+  if (item.check_name === "basketball_q4_handicap_shift") {
+    if (payload.Scenario === "same_param_probability_delta") {
+      return `В 1-й и 4-й четверти есть одинаковый параметр форы ${valueOrDash(payload.Q1Param)}, но разница вероятностей ${fmtNumber(Number(payload.AbsProbabilityDelta || 0) * 100)} п.п. выше порога 25 п.п.`;
+    }
+    return `В 4-й четверти нет центрального параметра 1-й четверти ${valueOrDash(payload.Q1Param)}. Центральная фора 4-й четверти ${valueOrDash(payload.Q4CentralParam)}, дельта ${valueOrDash(payload.AbsParamDelta)} выше порога 4.5.`;
+  }
   if (item.check_name === "tennis_special_what_earlear") {
     return `Тоталы Ace (${valueOrDash(payload.Param_Ace)}) и Breaks (${valueOrDash(payload.Param_Breaks)}) конфликтуют с коэффициентами рынка 'что раньше'.`;
   }
@@ -407,6 +418,21 @@ function renderDetails(container, item) {
         [payload.pointsParam, payload.reboundsParam, payload.assistsParam]
       ]);
     }
+  } else if (item.check_name === "basketball_q4_handicap_shift") {
+    appendTable(container, ["Scenario", "EventType", "Q1 param", "Q1 coef", "Q1 probability"], [
+      [payload.Scenario, payload.EventType, payload.Q1Param, payload.Q1Coef, payload.Q1Probability]
+    ]);
+    appendTable(container, ["Q4 center param", "Q4 center coef", "Q4 center probability", "Param delta", "Param threshold"], [
+      [payload.Q4CentralParam, payload.Q4CentralCoef, payload.Q4CentralProbability, payload.AbsParamDelta, payload.ParamDeltaThreshold]
+    ]);
+    if (payload.Scenario === "same_param_probability_delta") {
+      appendTable(container, ["Q4 same param", "Q4 same coef", "Q4 same probability", "Probability delta", "Probability threshold"], [
+        [payload.Q4SameParam, payload.Q4SameParamCoef, payload.Q4SameParamProbability, payload.AbsProbabilityDelta, payload.ProbabilityDeltaThreshold]
+      ]);
+    }
+    appendTable(container, ["Q1 game", "Q4 center game", "Q4 same-param game"], [
+      [payload.Q1GameId, payload.Q4CentralGameId, payload.Q4SameParamGameId]
+    ]);
   } else if (item.check_name === "tennis_special_what_earlear") {
     appendTable(container, ["Period", "Ace total", "Breaks total", "Ace before break", "Break before ace"], [
       [payload.Period, payload.Param_Ace, payload.Param_Breaks, payload.koef_ace_before_break, payload.koef_break_before_ace]

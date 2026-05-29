@@ -384,6 +384,36 @@ Combination checks:
 - `points_rebounds_assists` should be close to `points + rebounds + assists`;
 - current combination delta threshold is `1.5`.
 
+### Basketball Q4 Handicap Shift
+
+Internal name:
+
+```text
+basketball_q4_handicap_shift
+```
+
+Purpose:
+
+Checks whether basketball 4th-quarter handicap markets are shifted too far from the 1st-quarter handicap markets.
+
+Scope:
+
+- only `SportName = Basketball`;
+- only `GameType = Main`;
+- only periods `1` and `4`;
+- only `EventType = Fora_1` and `Fora_2`.
+
+Line selection:
+
+- in the 1st quarter, choose the central handicap line by coefficient closest to `1.95`;
+- do the same for the 4th quarter;
+- compare each side independently: `Fora_1` with `Fora_1`, `Fora_2` with `Fora_2`.
+
+Anomaly scenarios:
+
+- if the same 1st-quarter parameter exists in the 4th quarter, compare implied probabilities `1 / Coef`; absolute probability delta above `25` percentage points is `DIFF`;
+- if the same parameter does not exist in the 4th quarter, compare central parameters; absolute parameter delta above `4.5` points is `DIFF`.
+
 ### Period Conflicts
 
 Internal name:

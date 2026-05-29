@@ -43,6 +43,9 @@ BASKETBALL_EVENT_STAT = {
 }
 BASKETBALL_PLAYER_POINT_EVENTS = BASKETBALL_PLAYER_EVENT_TYPES["points"]
 BASKETBALL_PERIOD_EXPECTATIONS = {1: 4, 2: 4, 3: 4, 4: 4, 11: 2, 12: 2}
+BASKETBALL_HANDICAP_EVENTS = {"Fora_1", "Fora_2"}
+BASKETBALL_Q4_HANDICAP_PROBABILITY_DELTA_THRESHOLD = 0.25
+BASKETBALL_Q4_HANDICAP_PARAM_DELTA_THRESHOLD = 4.5
 PERIOD_DEVIATION_SPORT_PERIODS = {
     "AustralianFootball": (1, 2, 3, 4),
     "Basketball": (1, 2, 3, 4),
@@ -993,12 +996,140 @@ def analyze_basketball_players(df):
     return rows
 
 
+def basketball_q4_handicap_rows(df):
+    required = {"SportName", "GameType", "Period", "EventType", "Coef", "Param"}
+    if df.empty or not required.issubset(df.columns):
+        return pd.DataFrame()
+    rows = df[
+        (df["SportName"] == "Basketball") &
+        (df["GameType"] == "Main") &
+        (df["Period"].isin([1, 4])) &
+        (df["EventType"].isin(BASKETBALL_HANDICAP_EVENTS)) &
+        (df["Coef"] > 1) &
+        (df["Param"].notna())
+    ].copy()
+    if rows.empty:
+        return rows
+    rows["Probability"] = 1 / rows["Coef"]
+    rows["CoefDistance"] = (rows["Coef"] - 1.95).abs()
+    return rows
+
+
+def basketball_q4_handicap_centers(rows):
+    if rows.empty:
+        return rows
+    ordered = rows.sort_values(
+        ["MainGameId", "EventType", "Period", "CoefDistance", "Coef", "Param"],
+        kind="mergesort",
+    )
+    return ordered.drop_duplicates(["MainGameId", "EventType", "Period"], keep="first")
+
+
+def basketball_q4_same_param_lines(rows):
+    if rows.empty:
+        return {}
+    ordered = rows.sort_values(
+        ["MainGameId", "EventType", "Period", "Param", "CoefDistance", "Coef", "GameId"],
+        kind="mergesort",
+    )
+    best = ordered.drop_duplicates(["MainGameId", "EventType", "Period", "Param"], keep="first")
+    return {
+        (row["MainGameId"], row["EventType"], row["Period"], row["Param"]): row
+        for _, row in best.iterrows()
+    }
+
+
+def analyze_basketball_q4_handicap_shift(df):
+    rows = basketball_q4_handicap_rows(df)
+    if rows.empty:
+        return []
+
+    centers = basketball_q4_handicap_centers(rows)
+    same_param_lines = basketball_q4_same_param_lines(rows)
+    center_by_key = {
+        (row["MainGameId"], row["EventType"], row["Period"]): row
+        for _, row in centers.iterrows()
+    }
+
+    result = []
+    for (main_game_id, event_type, period), q1 in center_by_key.items():
+        if period != 1:
+            continue
+        q4_center = center_by_key.get((main_game_id, event_type, 4))
+        if q4_center is None:
+            continue
+
+        base = {
+            "Status": "DIFF",
+            "Rule": "basketball fourth quarter handicap differs from first quarter",
+            "MainGameId": main_game_id,
+            "GameType": q1.get("GameType"),
+            "Sport": q1.get("SportName"),
+            "Champ": q1.get("Champ"),
+            "Opp1": q1.get("Opp1"),
+            "Opp2": q1.get("Opp2"),
+            "Start": q1.get("Start"),
+            "EventType": event_type,
+            "Q1GameId": q1.get("GameId"),
+            "Q1Param": round(q1.get("Param"), 4),
+            "Q1Coef": round(q1.get("Coef"), 4),
+            "Q1Probability": round(q1.get("Probability"), 6),
+            "Q4CentralGameId": q4_center.get("GameId"),
+            "Q4CentralParam": round(q4_center.get("Param"), 4),
+            "Q4CentralCoef": round(q4_center.get("Coef"), 4),
+            "Q4CentralProbability": round(q4_center.get("Probability"), 6),
+        }
+
+        same_q4 = same_param_lines.get((main_game_id, event_type, 4, q1["Param"]))
+        if same_q4 is not None:
+            probability_delta = same_q4["Probability"] - q1["Probability"]
+            abs_probability_delta = abs(probability_delta)
+            if abs_probability_delta <= BASKETBALL_Q4_HANDICAP_PROBABILITY_DELTA_THRESHOLD:
+                continue
+            row = dict(base)
+            row.update({
+                "Scenario": "same_param_probability_delta",
+                "Q4SameParamGameId": same_q4.get("GameId"),
+                "Q4SameParam": round(same_q4.get("Param"), 4),
+                "Q4SameParamCoef": round(same_q4.get("Coef"), 4),
+                "Q4SameParamProbability": round(same_q4.get("Probability"), 6),
+                "ProbabilityDelta": round(probability_delta, 6),
+                "AbsProbabilityDelta": round(abs_probability_delta, 6),
+                "ProbabilityDeltaThreshold": BASKETBALL_Q4_HANDICAP_PROBABILITY_DELTA_THRESHOLD,
+            })
+            result.append(row)
+            continue
+
+        param_delta = q4_center["Param"] - q1["Param"]
+        abs_param_delta = abs(param_delta)
+        if abs_param_delta <= BASKETBALL_Q4_HANDICAP_PARAM_DELTA_THRESHOLD:
+            continue
+        row = dict(base)
+        row.update({
+            "Scenario": "missing_param_central_param_delta",
+            "ParamDelta": round(param_delta, 4),
+            "AbsParamDelta": round(abs_param_delta, 4),
+            "ParamDeltaThreshold": BASKETBALL_Q4_HANDICAP_PARAM_DELTA_THRESHOLD,
+        })
+        result.append(row)
+
+    return sorted(
+        result,
+        key=lambda row: (
+            row.get("AbsProbabilityDelta", 0),
+            row.get("AbsParamDelta", 0),
+        ),
+        reverse=True,
+    )
+
+
 CHECKS = {
     "period_deviations_average": analyze_period_deviations_average,
     "total_deviations_average": analyze_total_deviations_average,
     "stat_conflicts": analyze_stat_conflicts,
     "football_stat_relations": analyze_football_stat_relations,
     "basketball_players": analyze_basketball_players,
+    "basketball_q4_handicap_shift": analyze_basketball_q4_handicap_shift,
     "period_conflicts": analyze_period_conflicts,
     "tennis_special_what_earlear": analyze_tennis_what_earlear,
 }

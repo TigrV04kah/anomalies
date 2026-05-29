@@ -18,6 +18,7 @@ const template = document.querySelector("#anomalyTemplate");
 const reviewersList = document.querySelector("#reviewersList");
 const scopeTabs = document.querySelectorAll(".tab[data-scope]");
 const CHECK_HELP = {};
+const BASE_DOCUMENT_TITLE = document.title || "Line Monitor";
 
 const REVIEWERS = [
   "Иванов Сергей",
@@ -601,6 +602,11 @@ function renderStats(stats = {}) {
   statsBox.querySelector(".stat-normal b").textContent = stats.normal || 0;
 }
 
+function updateDocumentTitle(activeDefectsCount) {
+  const count = Number(activeDefectsCount) || 0;
+  document.title = count > 0 ? `(${count}) ${BASE_DOCUMENT_TITLE}` : BASE_DOCUMENT_TITLE;
+}
+
 function renderScopeTabs() {
   for (const tab of scopeTabs) {
     const active = tab.dataset.scope === state.scope;
@@ -635,6 +641,9 @@ async function loadAnomalies({ force = false } = {}) {
     if (!response.ok) throw new Error(data.error || "Load failed");
     state.items = data.items || [];
     renderStats(data.stats || {});
+    if (state.scope === "current") {
+      updateDocumentTitle(data.stats?.defect);
+    }
     render();
   } catch (error) {
     showMessage(error.message, true);

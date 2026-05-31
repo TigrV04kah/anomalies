@@ -4,6 +4,7 @@ const path = require("path");
 const anomalies = require("./api/anomalies");
 const review = require("./api/review");
 const dashboard = require("./api/dashboard");
+const lineDashboard = require("./api/line-dashboard");
 
 const root = __dirname;
 const port = Number(process.env.PORT || 8766);
@@ -46,6 +47,10 @@ const server = http.createServer((req, res) => {
   }
   if (url.pathname === "/api/dashboard") {
     dashboard(req, res);
+    return;
+  }
+  if (url.pathname === "/api/line-dashboard") {
+    lineDashboard(req, res);
     return;
   }
   const file = url.pathname === "/" ? "index.html" : url.pathname.slice(1);

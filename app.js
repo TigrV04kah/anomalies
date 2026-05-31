@@ -1,6 +1,7 @@
 const state = {
   items: [],
   dashboard: null,
+  lineDashboard: null,
   loading: false,
   dirty: false,
   scope: "current"
@@ -623,6 +624,106 @@ function renderDashboard() {
   list.appendChild(dashboard);
 }
 
+function renderHeatmap(hourly = []) {
+  const sports = [...new Set(hourly.map(row => row.sport))].sort();
+  const max = Math.max(1, ...hourly.map(row => Number(row.unique_main_games) || 0));
+  const byKey = new Map(hourly.map(row => [`${row.sport}|${row.hour_local}`, row]));
+  const table = document.createElement("table");
+  table.className = "heatmap-table";
+  const thead = document.createElement("thead");
+  const head = document.createElement("tr");
+  ["Sport", ...Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, "0"))].forEach(label => {
+    const th = document.createElement("th");
+    th.textContent = label;
+    head.appendChild(th);
+  });
+  thead.appendChild(head);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  for (const sport of sports) {
+    const tr = document.createElement("tr");
+    const sportCell = document.createElement("th");
+    sportCell.textContent = sport;
+    tr.appendChild(sportCell);
+    for (let hour = 0; hour < 24; hour += 1) {
+      const row = byKey.get(`${sport}|${hour}`);
+      const value = Number(row?.unique_main_games) || 0;
+      const td = document.createElement("td");
+      td.textContent = value ? fmtNumber(value) : "";
+      td.title = `${sport}, ${String(hour).padStart(2, "0")}:00 · MainGameID ${fmtNumber(value)} · events ${fmtNumber(row?.events_count || 0)}`;
+      td.style.setProperty("--heat", String(value / max));
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  return table;
+}
+
+function renderLineDashboard() {
+  list.textContent = "";
+  showMessage("");
+  renderStats({ new: 0, defect: 0, normal: 0 });
+  const data = state.lineDashboard || {};
+  const latest = data.latest || {};
+  summary.textContent = latest.run_id
+    ? `Line Stats · ${fmtDateTime(latest.started_at)}`
+    : "Line Stats";
+
+  const dashboard = document.createElement("section");
+  dashboard.className = "dashboard";
+  if (!latest.run_id) {
+    showMessage("Статистика линии еще не записана. Выполните SQL-миграцию и дождитесь следующего прогона.", true);
+    list.appendChild(dashboard);
+    return;
+  }
+
+  const metrics = document.createElement("div");
+  metrics.className = "metrics";
+  metrics.appendChild(dashboardMetric("Последний снимок", fmtDateTime(latest.started_at)));
+  metrics.appendChild(dashboardMetric("Игр в снимке", fmtNumber(latest.snapshot_games)));
+  metrics.appendChild(dashboardMetric("Спортов", fmtNumber((data.sport || []).length)));
+  metrics.appendChild(dashboardMetric("SubSport", fmtNumber((data.subsport || []).length)));
+  metrics.appendChild(dashboardMetric("Часовых ячеек", fmtNumber((data.hourly || []).length)));
+  dashboard.appendChild(metrics);
+
+  const sportSection = document.createElement("section");
+  sportSection.className = "dashboard-section";
+  sportSection.innerHTML = "<h2>По видам спорта</h2>";
+  appendTable(
+    sportSection,
+    ["Sport", "MainGameID", "MainGameID + GameType", "EventType", "Game rows", "Events"],
+    (data.sport || []).map(row => [
+      row.sport,
+      row.unique_main_games,
+      row.unique_main_game_types,
+      row.unique_event_types,
+      row.games_count,
+      row.events_count
+    ])
+  );
+  dashboard.appendChild(sportSection);
+
+  const subsportSection = document.createElement("section");
+  subsportSection.className = "dashboard-section";
+  subsportSection.innerHTML = "<h2>По SubSport</h2>";
+  appendTable(
+    subsportSection,
+    ["SubSport", "MainGameID", "Game rows", "Events"],
+    (data.subsport || []).map(row => [row.subsport, row.unique_main_games, row.games_count, row.events_count])
+  );
+  dashboard.appendChild(subsportSection);
+
+  const heatmapSection = document.createElement("section");
+  heatmapSection.className = "dashboard-section";
+  heatmapSection.innerHTML = "<h2>Тепловая карта по часам</h2>";
+  heatmapSection.appendChild(renderHeatmap(data.hourly || []));
+  dashboard.appendChild(heatmapSection);
+
+  list.appendChild(dashboard);
+}
+
 function render() {
   if (state.scope === "guide") {
     renderGuide();
@@ -630,6 +731,10 @@ function render() {
   }
   if (state.scope === "dashboard") {
     renderDashboard();
+    return;
+  }
+  if (state.scope === "line-dashboard") {
+    renderLineDashboard();
     return;
   }
 
@@ -709,6 +814,10 @@ async function loadAnomalies({ force = false } = {}) {
     await loadDashboard();
     return;
   }
+  if (state.scope === "line-dashboard") {
+    await loadLineDashboard();
+    return;
+  }
   state.loading = true;
   refreshButton.disabled = true;
   try {
@@ -746,6 +855,24 @@ async function loadDashboard() {
     if (!response.ok) throw new Error(data.error || "Load failed");
     state.dashboard = data;
     renderDashboard();
+  } catch (error) {
+    showMessage(error.message, true);
+  } finally {
+    state.loading = false;
+    refreshButton.disabled = false;
+  }
+}
+
+async function loadLineDashboard() {
+  if (state.loading) return;
+  state.loading = true;
+  refreshButton.disabled = true;
+  try {
+    const response = await fetch("/api/line-dashboard");
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Load failed");
+    state.lineDashboard = data;
+    renderLineDashboard();
   } catch (error) {
     showMessage(error.message, true);
   } finally {

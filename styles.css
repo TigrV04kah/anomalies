@@ -302,6 +302,35 @@ main {
   font-size: 18px;
 }
 
+.heatmap-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.heatmap-table th,
+.heatmap-table td {
+  min-width: 42px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  text-align: center;
+}
+
+.heatmap-table th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 140px;
+  background: #eef2f6;
+  text-align: left;
+}
+
+.heatmap-table td {
+  background: color-mix(in srgb, #ffffff calc((1 - var(--heat, 0)) * 100%), #176b87 calc(var(--heat, 0) * 100%));
+  color: var(--text);
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

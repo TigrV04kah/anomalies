@@ -82,7 +82,7 @@ def try_post_json(table, rows, on_conflict):
             raise
         print(
             f"Warning: Supabase table '{table}' is missing; "
-            "run supabase_migration_run_statistics.sql to enable statistics."
+            "run the corresponding supabase_migration_*.sql file to enable this statistic."
         )
         return False
 
@@ -210,4 +210,21 @@ def sync_run_results(
         check_stats_synced = try_post_json("run_check_statistics", batch, on_conflict="run_id,check_name") and check_stats_synced
     synced["_run_statistics"] = 1 if stats_synced else 0
     synced["_run_check_statistics"] = len(check_stats) if check_stats_synced else 0
+    return synced
+
+
+def sync_snapshot_statistics(rows_by_table):
+    table_map = {
+        "sport": ("snapshot_sport_statistics", "run_id,sport"),
+        "subsport": ("snapshot_subsport_statistics", "run_id,subsport"),
+        "hourly": ("snapshot_hourly_statistics", "run_id,sport,hour_local"),
+    }
+    synced = {}
+    for key, rows in rows_by_table.items():
+        table, conflict = table_map[key]
+        count = 0
+        for batch in chunks(rows, 500):
+            if try_post_json(table, batch, on_conflict=conflict):
+                count += len(batch)
+        synced[key] = count
     return synced

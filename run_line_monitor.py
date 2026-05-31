@@ -9,8 +9,10 @@ from pymongo import MongoClient
 
 from analyze_line_rules import analyze_all_checks
 from export_line_snapshot import DEFAULT_MONGO_URI, convert_game, env_value, load_reference_json
+from snapshot_statistics import build_snapshot_statistics_rows
 from supabase_store import is_configured as supabase_is_configured
 from supabase_store import sync_run_results as sync_supabase_run_results
+from supabase_store import sync_snapshot_statistics
 
 
 DEFAULT_STATE_PATH = Path("linegame_state.json")
@@ -156,6 +158,9 @@ def run(args):
         max_dd=max_dd.replace(tzinfo=timezone.utc).isoformat() if max_dd else None,
     )
     print(f"Synced Supabase rows: {synced_results}")
+    snapshot_stats = build_snapshot_statistics_rows(current_games, run_id)
+    synced_snapshot_stats = sync_snapshot_statistics(snapshot_stats)
+    print(f"Synced snapshot statistics: {synced_snapshot_stats}")
 
     if max_dd is not None:
         state["last_dd"] = max_dd.replace(tzinfo=timezone.utc).isoformat()

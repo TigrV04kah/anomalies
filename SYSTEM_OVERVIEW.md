@@ -440,6 +440,13 @@ Anomaly:
 - period favorite exists in another period;
 - favorites are different.
 
+Esports exception:
+
+- applies to `SubSport` `Valorant`, `CoD`, `Dota2`, `CS2`;
+- if the match-side implied probability delta `abs(1 / p1 - 1 / p2)` is below `0.14`;
+- and the period-side implied probability delta is below `0.15`;
+- then the favorite flip is treated as a soft conflict and is not reported.
+
 ### Tennis Special. What Earlear
 
 Internal name:

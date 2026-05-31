@@ -278,6 +278,7 @@ def convert_event(event, refs):
 
 def convert_game(doc, refs):
     sport = doc.get("S")
+    subsport = doc.get("SubSport", doc.get("SS"))
     return {
         "Events": [convert_event(event, refs) for event in (doc.get("E") or [])],
         "GameId": doc.get("I"),
@@ -285,6 +286,7 @@ def convert_game(doc, refs):
         "ConstId": doc.get("K"),
         "ChampId": doc.get("CI"),
         "Sport": sport,
+        "SubSport": subsport,
         "SportName": refs["sports"].get(sport),
         "Champ": doc.get("C"),
         "Opp1": doc.get("H"),

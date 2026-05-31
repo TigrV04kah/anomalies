@@ -362,12 +362,12 @@ function renderDetails(container, item) {
   container.classList.add("details-grid");
 
   if (item.check_name === "period_conflicts") {
-    appendTable(container, ["GameType", "Period"], [
-      [payload.GameType, payload.Period]
+    appendTable(container, ["GameType", "SubSport", "Period"], [
+      [payload.GameType, payload.SubSport, payload.Period]
     ]);
-    appendTable(container, ["Scope", "Favorite", "P1 coef", "P1 zone", "P2 coef", "P2 zone"], [
-      ["Match", payload.MatchFavorite, payload.MatchP1, payload.MatchP1Zone, payload.MatchP2, payload.MatchP2Zone],
-      [`Period ${valueOrDash(payload.Period)}`, payload.PeriodFavorite, payload.PeriodP1, payload.PeriodP1Zone, payload.PeriodP2, payload.PeriodP2Zone]
+    appendTable(container, ["Scope", "Favorite", "P1 coef", "P1 zone", "P2 coef", "P2 zone", "Probability delta"], [
+      ["Match", payload.MatchFavorite, payload.MatchP1, payload.MatchP1Zone, payload.MatchP2, payload.MatchP2Zone, payload.MatchProbabilityDelta],
+      [`Period ${valueOrDash(payload.Period)}`, payload.PeriodFavorite, payload.PeriodP1, payload.PeriodP1Zone, payload.PeriodP2, payload.PeriodP2Zone, payload.PeriodProbabilityDelta]
     ]);
   } else if (item.check_name === "total_deviations_average") {
     appendTable(container, ["GameType", "Event side", "Period", "Total", "Ind total 1", "Ind total 2", "Expected", "Delta"], [

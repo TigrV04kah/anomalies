@@ -46,6 +46,9 @@ BASKETBALL_PERIOD_EXPECTATIONS = {1: 4, 2: 4, 3: 4, 4: 4, 11: 2, 12: 2}
 BASKETBALL_HANDICAP_EVENTS = {"Fora_1", "Fora_2"}
 BASKETBALL_Q4_HANDICAP_PROBABILITY_DELTA_THRESHOLD = 0.25
 BASKETBALL_Q4_HANDICAP_PARAM_DELTA_THRESHOLD = 4.5
+PERIOD_CONFLICT_ESPORTS_SUBSPORTS = {"Valorant", "CoD", "Dota2", "CS2"}
+PERIOD_CONFLICT_ESPORTS_MATCH_PROBABILITY_DELTA = 0.14
+PERIOD_CONFLICT_ESPORTS_PERIOD_PROBABILITY_DELTA = 0.15
 PERIOD_DEVIATION_SPORT_PERIODS = {
     "AustralianFootball": (1, 2, 3, 4),
     "Basketball": (1, 2, 3, 4),
@@ -93,6 +96,7 @@ def games_to_events(games):
             "MainGameId": game.get("MainGameId"),
             "GameType": game.get("GameType"),
             "GameVid": game.get("GameVid"),
+            "SubSport": game.get("SubSport"),
             "Period": game.get("Period"),
             "SportName": game.get("SportName"),
             "Champ": game.get("Champ"),
@@ -159,7 +163,10 @@ def summary(rows, output):
 def game_info_map(df):
     if df.empty:
         return {}
-    cols = ["MainGameId", "SportName", "Champ", "Opp1", "Opp2", "Start"]
+    cols = [
+        column for column in ["MainGameId", "SportName", "SubSport", "GameVid", "Champ", "Opp1", "Opp2", "Start"]
+        if column in df.columns
+    ]
     return df.drop_duplicates("MainGameId")[cols].set_index("MainGameId").to_dict("index")
 
 
@@ -606,6 +613,58 @@ def favorite_by_zone(p1, p2):
     return "no_favorite", p1_zone, p2_zone
 
 
+def implied_probability_delta(p1, p2):
+    if pd.isna(p1) or pd.isna(p2) or p1 <= 0 or p2 <= 0:
+        return None
+    return abs(1 / p1 - 1 / p2)
+
+
+def normalize_subsport(row):
+    direct = row.get("SubSport")
+    if isinstance(direct, str) and direct.strip():
+        value = direct.strip()
+        aliases = {
+            "call of duty": "CoD",
+            "cod": "CoD",
+            "cs 2": "CS2",
+            "counter-strike 2": "CS2",
+            "counter strike 2": "CS2",
+            "dota": "Dota2",
+            "dota 2": "Dota2",
+            "dota2": "Dota2",
+            "valorant": "Valorant",
+        }
+        return aliases.get(value.lower(), value)
+
+    text = " ".join(
+        str(row.get(column, ""))
+        for column in ["SportName", "GameVid", "Champ", "Opp1", "Opp2"]
+    ).lower()
+    if "valorant" in text:
+        return "Valorant"
+    if "call of duty" in text or " cod" in f" {text} ":
+        return "CoD"
+    if "dota2" in text or "dota 2" in text:
+        return "Dota2"
+    if "cs2" in text or "cs 2" in text or "counter-strike 2" in text or "counter strike 2" in text:
+        return "CS2"
+    return direct
+
+
+def is_esports_soft_period_conflict(item, game_info):
+    subsport = normalize_subsport(game_info)
+    if subsport not in PERIOD_CONFLICT_ESPORTS_SUBSPORTS:
+        return False
+    match_delta = implied_probability_delta(item.get("p1_match"), item.get("p2_match"))
+    period_delta = implied_probability_delta(item.get("p1_period"), item.get("p2_period"))
+    if match_delta is None or period_delta is None:
+        return False
+    return (
+        match_delta < PERIOD_CONFLICT_ESPORTS_MATCH_PROBABILITY_DELTA and
+        period_delta < PERIOD_CONFLICT_ESPORTS_PERIOD_PROBABILITY_DELTA
+    )
+
+
 def analyze_period_conflicts(df):
     if df.empty:
         return []
@@ -648,11 +707,16 @@ def analyze_period_conflicts(df):
     rows = []
     for _, item in conflicts.iterrows():
         gi = info.get(item["MainGameId"], {})
+        if is_esports_soft_period_conflict(item, gi):
+            continue
+        match_probability_delta = implied_probability_delta(item["p1_match"], item["p2_match"])
+        period_probability_delta = implied_probability_delta(item["p1_period"], item["p2_period"])
         rows.append({
             "Status": "DIFF",
             "MainGameId": item["MainGameId"],
             "GameType": "Main",
             "Sport": gi.get("SportName"),
+            "SubSport": normalize_subsport(gi),
             "Champ": gi.get("Champ"),
             "Opp1": gi.get("Opp1"),
             "Opp2": gi.get("Opp2"),
@@ -668,6 +732,8 @@ def analyze_period_conflicts(df):
             "PeriodP2": item["p2_period"],
             "PeriodP1Zone": item["period_p1_zone"],
             "PeriodP2Zone": item["period_p2_zone"],
+            "MatchProbabilityDelta": round(match_probability_delta, 6) if match_probability_delta is not None else None,
+            "PeriodProbabilityDelta": round(period_probability_delta, 6) if period_probability_delta is not None else None,
         })
     return rows
 

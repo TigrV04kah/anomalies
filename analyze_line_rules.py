@@ -190,6 +190,40 @@ def period_deviation_threshold(main_param):
     return 8.0
 
 
+def probability(coef):
+    if pd.isna(coef) or coef <= 0:
+        return None
+    return 1 / coef
+
+
+def rounded_probability(coef):
+    value = probability(coef)
+    return round(value, 6) if value is not None else None
+
+
+def rounded_number(value, digits=4):
+    if pd.isna(value):
+        return None
+    return round(value, digits)
+
+
+def source_label(row):
+    name = row.get("ContoraName")
+    contora = row.get("Contora")
+    if pd.notna(name) and name not in (None, ""):
+        if pd.notna(contora) and contora not in (None, ""):
+            return f"{name} ({contora})"
+        return str(name)
+    if pd.notna(contora) and contora not in (None, ""):
+        return str(contora)
+    return None
+
+
+def joined_sources(values):
+    sources = sorted({str(value) for value in values if pd.notna(value) and str(value).strip()})
+    return "; ".join(sources)
+
+
 def analyze_period_deviations_average(df):
     if df.empty:
         return []
@@ -204,10 +238,15 @@ def analyze_period_deviations_average(df):
     ].copy()
     if filtered.empty:
         return []
+    filtered["SourceLabel"] = filtered.apply(source_label, axis=1)
 
     mean_param = filtered.groupby(
         ["GameId", "MainGameId", "GameType", "Period", "EventType"], dropna=False
-    ).agg(Param=("Param", "mean")).reset_index()
+    ).agg(
+        Param=("Param", "mean"),
+        Coef=("Coef", "mean"),
+        Sources=("SourceLabel", joined_sources),
+    ).reset_index()
 
     param_pivot = mean_param.pivot_table(
         index=["MainGameId", "GameType"],
@@ -227,6 +266,24 @@ def analyze_period_deviations_average(df):
     gameid_pivot.columns = [f"{event}_{period}_GameId" for event, period in gameid_pivot.columns]
     gameid_pivot = gameid_pivot.reset_index()
     pivot = param_pivot.merge(gameid_pivot, on=["MainGameId", "GameType"], how="left")
+    coef_pivot = mean_param.pivot_table(
+        index=["MainGameId", "GameType"],
+        columns=["EventType", "Period"],
+        values="Coef",
+        aggfunc="mean",
+    )
+    coef_pivot.columns = [f"{event}_{period}_Coef" for event, period in coef_pivot.columns]
+    coef_pivot = coef_pivot.reset_index()
+    source_pivot = mean_param.pivot_table(
+        index=["MainGameId", "GameType"],
+        columns=["EventType", "Period"],
+        values="Sources",
+        aggfunc="first",
+    )
+    source_pivot.columns = [f"{event}_{period}_Sources" for event, period in source_pivot.columns]
+    source_pivot = source_pivot.reset_index()
+    pivot = pivot.merge(coef_pivot, on=["MainGameId", "GameType"], how="left")
+    pivot = pivot.merge(source_pivot, on=["MainGameId", "GameType"], how="left")
     info = game_info_map(df)
 
     rows = []
@@ -275,12 +332,18 @@ def analyze_period_deviations_average(df):
                     "ComparisonType": comparison_type,
                     "Periods": "+".join(str(period) for period in periods),
                     "P0": round(item[p0_col], 4),
+                    "P0Coef": rounded_number(item.get(f"{event_type}_0_Coef")),
+                    "P0Probability": rounded_probability(item.get(f"{event_type}_0_Coef")),
+                    "P0Sources": item.get(f"{event_type}_0_Sources"),
                     "Delta": round(delta, 4),
                     "CriticalDelta": threshold,
                     "GID0": item[p0_gid],
                 }
                 for period, col, gid_col in zip(periods, period_cols, period_gids):
                     row[f"P{period}"] = round(item[col], 4)
+                    row[f"P{period}Coef"] = rounded_number(item.get(f"{event_type}_{period}_Coef"))
+                    row[f"P{period}Probability"] = rounded_probability(item.get(f"{event_type}_{period}_Coef"))
+                    row[f"P{period}Sources"] = item.get(f"{event_type}_{period}_Sources")
                     row[f"GID{period}"] = item[gid_col]
                 rows.append(row)
     return sorted(rows, key=lambda row: abs(float(row["Delta"])), reverse=True)
@@ -315,6 +378,10 @@ def analyze_total_deviations_average(df):
     )
     pivot.columns = [f"{event}_{period}_param" for event, period in pivot.columns]
     pivot = pivot.reset_index()
+    detail_by_key = {
+        (row["MainGameId"], row["GameType"], row["Period"], row["EventType"]): row
+        for _, row in closest_param.iterrows()
+    }
     info = game_info_map(df)
     rows = []
     for side in ("B", "M"):
@@ -331,6 +398,9 @@ def analyze_total_deviations_average(df):
                 if delta <= 1.5:
                     continue
                 gi = info.get(item["MainGameId"], {})
+                total_line = detail_by_key.get((item["MainGameId"], item["GameType"], period, f"Total_{side}"))
+                ind1_line = detail_by_key.get((item["MainGameId"], item["GameType"], period, f"IndTotal_1_{side}"))
+                ind2_line = detail_by_key.get((item["MainGameId"], item["GameType"], period, f"IndTotal_2_{side}"))
                 rows.append({
                     "Status": "DIFF",
                     "MainGameId": item["MainGameId"],
@@ -343,8 +413,17 @@ def analyze_total_deviations_average(df):
                     "Period": period,
                     "Type": side,
                     "Total": round(item[total_col], 4),
+                    "TotalCoef": rounded_number(total_line.get("Coef") if total_line is not None else None),
+                    "TotalProbability": rounded_probability(total_line.get("Coef") if total_line is not None else None),
+                    "TotalSource": source_label(total_line) if total_line is not None else None,
                     "IndTotal1": round(item[ind1_col], 4),
+                    "IndTotal1Coef": rounded_number(ind1_line.get("Coef") if ind1_line is not None else None),
+                    "IndTotal1Probability": rounded_probability(ind1_line.get("Coef") if ind1_line is not None else None),
+                    "IndTotal1Source": source_label(ind1_line) if ind1_line is not None else None,
                     "IndTotal2": round(item[ind2_col], 4),
+                    "IndTotal2Coef": rounded_number(ind2_line.get("Coef") if ind2_line is not None else None),
+                    "IndTotal2Probability": rounded_probability(ind2_line.get("Coef") if ind2_line is not None else None),
+                    "IndTotal2Source": source_label(ind2_line) if ind2_line is not None else None,
                     "Expected": round(expected, 4),
                     "Delta": round(delta, 4),
                 })
@@ -408,14 +487,19 @@ def add_game_info(row, info, main_game_id):
 def analyze_stat_conflicts(df):
     if df.empty:
         return []
-    wins = df[
+    win_rows = df[
         (df["EventType"].isin(["p1", "p2"])) &
         (df["GameType"] == "Main") &
         (df["SportName"] == "Football") &
         (df["Period"] == 0)
-    ].pivot_table(index="MainGameId", columns="EventType", values="Coef", aggfunc="mean").reset_index()
+    ].copy()
+    wins = win_rows.pivot_table(index="MainGameId", columns="EventType", values="Coef", aggfunc="mean").reset_index()
     if wins.empty or "p1" not in wins.columns or "p2" not in wins.columns:
         return []
+    win_source = {
+        (row["MainGameId"], row["EventType"]): source_label(row)
+        for _, row in win_rows.sort_values(["MainGameId", "EventType", "Coef"]).drop_duplicates(["MainGameId", "EventType"]).iterrows()
+    }
 
     stats = df[
         (df["EventType"].isin(["p1", "p2"])) &
@@ -436,6 +520,8 @@ def analyze_stat_conflicts(df):
         match_fav = get_match_favorite_by_coef_zone(match_p1, match_p2)
         stat_p1 = group[group["EventType"] == "p1"]["Coef"].iloc[0] if "p1" in set(group["EventType"]) else None
         stat_p2 = group[group["EventType"] == "p2"]["Coef"].iloc[0] if "p2" in set(group["EventType"]) else None
+        stat_p1_source = source_label(group[group["EventType"] == "p1"].iloc[0]) if "p1" in set(group["EventType"]) else None
+        stat_p2_source = source_label(group[group["EventType"] == "p2"].iloc[0]) if "p2" in set(group["EventType"]) else None
         if not stat_conflict_by_coef_direction(match_fav, stat_p1, stat_p2, stat_type):
             continue
         if stat_type == "Tackles":
@@ -454,9 +540,17 @@ def analyze_stat_conflicts(df):
             "Start": first.get("Start"),
             "StatType": stat_type,
             "MatchCoefP1": match_p1,
+            "MatchProbabilityP1": rounded_probability(match_p1),
+            "MatchSourceP1": win_source.get((first.get("MainGameId"), "p1")),
             "MatchCoefP2": match_p2,
+            "MatchProbabilityP2": rounded_probability(match_p2),
+            "MatchSourceP2": win_source.get((first.get("MainGameId"), "p2")),
             "StatCoefP1": stat_p1,
+            "StatProbabilityP1": rounded_probability(stat_p1),
+            "StatSourceP1": stat_p1_source,
             "StatCoefP2": stat_p2,
+            "StatProbabilityP2": rounded_probability(stat_p2),
+            "StatSourceP2": stat_p2_source,
             "MatchFavorite": match_fav,
             "StatFavorite": stat_fav,
             "ExpectedStatRole": "outsider" if stat_type in FOOTBALL_INVERTED else "favorite",
@@ -492,12 +586,21 @@ def outcome_lines(df):
     ].copy()
     if outcomes.empty:
         return pd.DataFrame()
+    outcomes["SourceLabel"] = outcomes.apply(source_label, axis=1)
     pivot = outcomes.pivot_table(
         index=["MainGameId", "GameId", "GameType"],
         columns="EventType",
         values="Coef",
         aggfunc="mean",
     ).reset_index()
+    source_pivot = outcomes.pivot_table(
+        index=["MainGameId", "GameId", "GameType"],
+        columns="EventType",
+        values="SourceLabel",
+        aggfunc="first",
+    ).reset_index()
+    source_pivot = source_pivot.rename(columns={"p1": "p1_source", "p2": "p2_source"})
+    pivot = pivot.merge(source_pivot, on=["MainGameId", "GameId", "GameType"], how="left")
     if "p1" not in pivot.columns:
         pivot["p1"] = pd.NA
     if "p2" not in pivot.columns:
@@ -543,7 +646,11 @@ def analyze_football_stat_relations(df):
                     "SourceCenterParam": round(shots_on_target, 4),
                     "TargetCenterParam": round(shot_by_gates, 4),
                     "SourceCenterCoef": round(source.get("Coef"), 4),
+                    "SourceCenterProbability": rounded_probability(source.get("Coef")),
+                    "SourceCenterSource": source_label(source),
                     "TargetCenterCoef": round(target.get("Coef"), 4),
+                    "TargetCenterProbability": rounded_probability(target.get("Coef")),
+                    "TargetCenterSource": source_label(target),
                     "SourceCenterEventType": source.get("EventType"),
                     "TargetCenterEventType": target.get("EventType"),
                 }, info, main_game_id))
@@ -579,9 +686,17 @@ def analyze_football_stat_relations(df):
                     "SourceFavorite": source_fav,
                     "TargetFavorite": target_fav,
                     "SourceCoefP1": round(source.get("p1"), 4),
+                    "SourceProbabilityP1": rounded_probability(source.get("p1")),
+                    "SourceContoraP1": source.get("p1_source"),
                     "SourceCoefP2": round(source.get("p2"), 4),
+                    "SourceProbabilityP2": rounded_probability(source.get("p2")),
+                    "SourceContoraP2": source.get("p2_source"),
                     "TargetCoefP1": round(target.get("p1"), 4),
+                    "TargetProbabilityP1": rounded_probability(target.get("p1")),
+                    "TargetContoraP1": target.get("p1_source"),
                     "TargetCoefP2": round(target.get("p2"), 4),
+                    "TargetProbabilityP2": rounded_probability(target.get("p2")),
+                    "TargetContoraP2": target.get("p2_source"),
                 }, info, main_game_id))
     return rows
 
@@ -671,12 +786,20 @@ def analyze_period_conflicts(df):
     wins = df[(df["EventType"].isin(["p1", "p2"])) & (df["GameType"] == "Main")].copy()
     if wins.empty:
         return []
+    wins["SourceLabel"] = wins.apply(source_label, axis=1)
     pivot = wins.pivot_table(
         index=["MainGameId", "Period"],
         columns="EventType",
         values="Coef",
         aggfunc="mean",
     ).reset_index()
+    source_pivot = wins.pivot_table(
+        index=["MainGameId", "Period"],
+        columns="EventType",
+        values="SourceLabel",
+        aggfunc="first",
+    ).reset_index().rename(columns={"p1": "p1_source", "p2": "p2_source"})
+    pivot = pivot.merge(source_pivot, on=["MainGameId", "Period"], how="left")
     if "p1" not in pivot.columns or "p2" not in pivot.columns:
         return []
 
@@ -691,7 +814,7 @@ def analyze_period_conflicts(df):
         lambda row: pd.Series(favorite_by_zone(row["p1"], row["p2"])), axis=1
     )
     merged = periods.merge(
-        match[["MainGameId", "match_fav", "p1", "p2", "match_p1_zone", "match_p2_zone"]],
+        match[["MainGameId", "match_fav", "p1", "p2", "p1_source", "p2_source", "match_p1_zone", "match_p2_zone"]],
         on="MainGameId",
         how="inner",
         suffixes=("_period", "_match"),
@@ -724,12 +847,20 @@ def analyze_period_conflicts(df):
             "Period": item["Period"],
             "MatchFavorite": item["match_fav"],
             "MatchP1": item["p1_match"],
+            "MatchProbabilityP1": rounded_probability(item["p1_match"]),
+            "MatchSourceP1": item.get("p1_source_match"),
             "MatchP2": item["p2_match"],
+            "MatchProbabilityP2": rounded_probability(item["p2_match"]),
+            "MatchSourceP2": item.get("p2_source_match"),
             "MatchP1Zone": item["match_p1_zone"],
             "MatchP2Zone": item["match_p2_zone"],
             "PeriodFavorite": item["period_fav"],
             "PeriodP1": item["p1_period"],
+            "PeriodProbabilityP1": rounded_probability(item["p1_period"]),
+            "PeriodSourceP1": item.get("p1_source_period"),
             "PeriodP2": item["p2_period"],
+            "PeriodProbabilityP2": rounded_probability(item["p2_period"]),
+            "PeriodSourceP2": item.get("p2_source_period"),
             "PeriodP1Zone": item["period_p1_zone"],
             "PeriodP2Zone": item["period_p2_zone"],
             "MatchProbabilityDelta": round(match_probability_delta, 6) if match_probability_delta is not None else None,
@@ -870,6 +1001,8 @@ def basketball_player_centers(df):
 
     centers["Stat"] = centers["EventType"].map(BASKETBALL_EVENT_STAT)
     centers["ProbabilityDistance"] = (1 / centers["Coef"] - 0.5).abs()
+    centers["Probability"] = 1 / centers["Coef"]
+    centers["SourceLabel"] = centers.apply(source_label, axis=1)
     centers = centers.sort_values(
         ["MainGameId", "Player", "Period", "Stat", "ProbabilityDistance", "Coef", "Param"],
         kind="mergesort",
@@ -917,9 +1050,13 @@ def analyze_basketball_player_periods(centers):
             "Period": period,
             "PeriodParam": round(period_row["Param"], 4),
             "PeriodCoef": round(period_row["Coef"], 4),
+            "PeriodProbability": rounded_probability(period_row["Coef"]),
+            "PeriodSource": period_row.get("SourceLabel"),
             "FullGameId": full_row.get("GameId"),
             "FullParam": round(full_row["Param"], 4),
             "FullCoef": round(full_row["Coef"], 4),
+            "FullProbability": rounded_probability(full_row["Coef"]),
+            "FullSource": full_row.get("SourceLabel"),
             "ExpectedParam": round(expected, 4),
             "Delta": round(delta, 4),
             "DeltaLimit": round(delta_limit, 4),
@@ -989,8 +1126,12 @@ def analyze_basketball_player_monotonicity(df):
                 "Direction": "over" if is_over else "under",
                 "LeftParam": round(left.get("Param"), 4),
                 "LeftCoef": round(left_coef, 4),
+                "LeftProbability": rounded_probability(left_coef),
+                "LeftSource": source_label(left),
                 "RightParam": round(right.get("Param"), 4),
                 "RightCoef": round(right_coef, 4),
+                "RightProbability": rounded_probability(right_coef),
+                "RightSource": source_label(right),
                 "ParamDiff": round(abs(right.get("Param") - left.get("Param")), 4),
                 "ProbabilityDiff": round(probability_diff, 6),
             })
@@ -1042,6 +1183,8 @@ def analyze_basketball_player_combinations(centers):
             "Period": 0,
             "CenterParam": round(combo_row["Param"], 4),
             "CenterCoef": round(combo_row["Coef"], 4),
+            "CenterProbability": rounded_probability(combo_row["Coef"]),
+            "CenterSource": combo_row.get("SourceLabel"),
             "ExpectedParam": round(expected, 4),
             "Delta": round(delta, 4),
             "DeltaLimit": 1.5,
@@ -1049,6 +1192,8 @@ def analyze_basketball_player_combinations(centers):
         for component, component_row in zip(components, component_rows):
             row[f"{component}Param"] = round(component_row["Param"], 4)
             row[f"{component}Coef"] = round(component_row["Coef"], 4)
+            row[f"{component}Probability"] = rounded_probability(component_row["Coef"])
+            row[f"{component}Source"] = component_row.get("SourceLabel")
         rows.append(row)
     return rows
 
@@ -1078,6 +1223,7 @@ def basketball_q4_handicap_rows(df):
         return rows
     rows["Probability"] = 1 / rows["Coef"]
     rows["CoefDistance"] = (rows["Coef"] - 1.95).abs()
+    rows["SourceLabel"] = rows.apply(source_label, axis=1)
     return rows
 
 
@@ -1140,10 +1286,12 @@ def analyze_basketball_q4_handicap_shift(df):
             "Q1Param": round(q1.get("Param"), 4),
             "Q1Coef": round(q1.get("Coef"), 4),
             "Q1Probability": round(q1.get("Probability"), 6),
+            "Q1Source": q1.get("SourceLabel"),
             "Q4CentralGameId": q4_center.get("GameId"),
             "Q4CentralParam": round(q4_center.get("Param"), 4),
             "Q4CentralCoef": round(q4_center.get("Coef"), 4),
             "Q4CentralProbability": round(q4_center.get("Probability"), 6),
+            "Q4CentralSource": q4_center.get("SourceLabel"),
         }
 
         same_q4 = same_param_lines.get((main_game_id, event_type, 4, q1["Param"]))
@@ -1159,6 +1307,7 @@ def analyze_basketball_q4_handicap_shift(df):
                 "Q4SameParam": round(same_q4.get("Param"), 4),
                 "Q4SameParamCoef": round(same_q4.get("Coef"), 4),
                 "Q4SameParamProbability": round(same_q4.get("Probability"), 6),
+                "Q4SameParamSource": same_q4.get("SourceLabel"),
                 "ProbabilityDelta": round(probability_delta, 6),
                 "AbsProbabilityDelta": round(abs_probability_delta, 6),
                 "ProbabilityDeltaThreshold": BASKETBALL_Q4_HANDICAP_PROBABILITY_DELTA_THRESHOLD,

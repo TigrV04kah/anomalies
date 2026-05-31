@@ -216,6 +216,7 @@ def sync_run_results(
 def sync_snapshot_statistics(rows_by_table):
     table_map = {
         "sport": ("snapshot_sport_statistics", "run_id,sport"),
+        "game_type": ("snapshot_game_type_statistics", "run_id,sport,game_type"),
         "subsport": ("snapshot_subsport_statistics", "run_id,subsport"),
         "hourly": ("snapshot_hourly_statistics", "run_id,sport,hour_local"),
     }

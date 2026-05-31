@@ -36,6 +36,12 @@ def collect_snapshot_statistics(games):
         "games_count": 0,
         "events_count": 0,
     })
+    game_type = defaultdict(lambda: {
+        "main_games": set(),
+        "event_types": set(),
+        "games_count": 0,
+        "events_count": 0,
+    })
     subsport = defaultdict(lambda: {
         "main_games": set(),
         "games_count": 0,
@@ -63,6 +69,12 @@ def collect_snapshot_statistics(games):
         sport_item["games_count"] += 1
         sport_item["events_count"] += events_count
 
+        game_type_item = game_type[(sport_name, str(game.get("GameType") or "Unknown"))]
+        game_type_item["main_games"].add(main_game_id)
+        game_type_item["event_types"].update(event_types)
+        game_type_item["games_count"] += 1
+        game_type_item["events_count"] += events_count
+
         if subsport_name not in (None, ""):
             subsport_item = subsport[str(subsport_name)]
             subsport_item["main_games"].add(main_game_id)
@@ -71,6 +83,7 @@ def collect_snapshot_statistics(games):
 
     return {
         "sport": sport,
+        "game_type": game_type,
         "subsport": subsport,
     }
 
@@ -100,6 +113,18 @@ def build_snapshot_statistics_rows(games, run_id, started_at=None):
             "events_count": item["events_count"],
         })
 
+    game_type_rows = []
+    for (sport_name, game_type), item in sorted(stats["game_type"].items()):
+        game_type_rows.append({
+            "run_id": run_id,
+            "sport": sport_name,
+            "game_type": game_type,
+            "unique_main_games": len(item["main_games"]),
+            "unique_event_types": len(item["event_types"]),
+            "games_count": item["games_count"],
+            "events_count": item["events_count"],
+        })
+
     hour = parse_local_hour(started_at) if started_at else datetime.now(timezone.utc).astimezone(LOCAL_TZ).hour
     hourly_rows = [
         {
@@ -117,6 +142,7 @@ def build_snapshot_statistics_rows(games, run_id, started_at=None):
 
     return {
         "sport": sport_rows,
+        "game_type": game_type_rows,
         "subsport": subsport_rows,
         "hourly": hourly_rows,
     }

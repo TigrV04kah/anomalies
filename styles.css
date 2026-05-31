@@ -393,6 +393,17 @@ main {
   border-bottom: 0;
 }
 
+.clickable-table tbody tr {
+  cursor: pointer;
+}
+
+.clickable-table tbody tr:hover,
+.clickable-table tbody tr:focus,
+.clickable-table tbody tr.selected-row {
+  background: #edf7fb;
+  outline: 0;
+}
+
 .label {
   margin-bottom: 4px;
   color: var(--muted);

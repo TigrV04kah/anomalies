@@ -18,6 +18,17 @@ create table if not exists public.snapshot_subsport_statistics (
   primary key (run_id, subsport)
 );
 
+create table if not exists public.snapshot_game_type_statistics (
+  run_id text not null references public.monitor_runs(run_id),
+  sport text not null,
+  game_type text not null,
+  unique_main_games integer not null,
+  unique_event_types integer not null,
+  games_count integer not null,
+  events_count integer not null,
+  primary key (run_id, sport, game_type)
+);
+
 create table if not exists public.snapshot_hourly_statistics (
   run_id text not null references public.monitor_runs(run_id),
   sport text not null,
@@ -35,6 +46,9 @@ create index if not exists idx_snapshot_sport_statistics_sport
 
 create index if not exists idx_snapshot_subsport_statistics_subsport
   on public.snapshot_subsport_statistics(subsport, run_id);
+
+create index if not exists idx_snapshot_game_type_statistics_sport
+  on public.snapshot_game_type_statistics(sport, unique_main_games desc, run_id);
 
 create index if not exists idx_snapshot_hourly_statistics_sport_hour
   on public.snapshot_hourly_statistics(sport, hour_local, run_id);

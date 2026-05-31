@@ -4,7 +4,8 @@ const state = {
   lineDashboard: null,
   loading: false,
   dirty: false,
-  scope: "current"
+  scope: "current",
+  selectedLineSport: null
 };
 
 const list = document.querySelector("#list");
@@ -685,6 +686,47 @@ function renderHeatmap(hourly = []) {
   return wrapper;
 }
 
+function renderSportRowsTable(container, rows) {
+  const table = document.createElement("table");
+  table.className = "details-table clickable-table";
+  const columns = ["Sport", "MainGameID", "MainGameID + GameType", "EventType", "Game rows", "Events"];
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  for (const column of columns) {
+    const th = document.createElement("th");
+    th.textContent = column;
+    headRow.appendChild(th);
+  }
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+    tr.tabIndex = 0;
+    tr.className = row.sport === state.selectedLineSport ? "selected-row" : "";
+    tr.title = "Нажмите, чтобы открыть GameType и heatmap";
+    [row.sport, row.unique_main_games, row.unique_main_game_types, row.unique_event_types, row.games_count, row.events_count].forEach(value => {
+      const td = document.createElement("td");
+      td.textContent = valueOrDash(value);
+      tr.appendChild(td);
+    });
+    tr.addEventListener("click", () => {
+      state.selectedLineSport = state.selectedLineSport === row.sport ? null : row.sport;
+      renderLineDashboard();
+    });
+    tr.addEventListener("keydown", event => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        tr.click();
+      }
+    });
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  container.appendChild(table);
+}
+
 function renderLineDashboard() {
   list.textContent = "";
   showMessage("");
@@ -714,19 +756,12 @@ function renderLineDashboard() {
 
   const sportSection = document.createElement("section");
   sportSection.className = "dashboard-section";
-  sportSection.innerHTML = "<h2>По видам спорта</h2>";
-  appendTable(
-    sportSection,
-    ["Sport", "MainGameID", "MainGameID + GameType", "EventType", "Game rows", "Events"],
-    (data.sport || []).map(row => [
-      row.sport,
-      row.unique_main_games,
-      row.unique_main_game_types,
-      row.unique_event_types,
-      row.games_count,
-      row.events_count
-    ])
-  );
+  sportSection.innerHTML = "<h2>Топ-20 видов спорта</h2>";
+  const topSports = (data.sport || []).slice(0, 20);
+  if (state.selectedLineSport && !topSports.some(row => row.sport === state.selectedLineSport)) {
+    state.selectedLineSport = null;
+  }
+  renderSportRowsTable(sportSection, topSports);
   dashboard.appendChild(sportSection);
 
   const subsportSection = document.createElement("section");
@@ -739,11 +774,25 @@ function renderLineDashboard() {
   );
   dashboard.appendChild(subsportSection);
 
-  const heatmapSection = document.createElement("section");
-  heatmapSection.className = "dashboard-section";
-  heatmapSection.innerHTML = "<h2>Среднее по снимкам: день недели × час</h2>";
-  heatmapSection.appendChild(renderHeatmap(data.hourlyAverage || []));
-  dashboard.appendChild(heatmapSection);
+  if (state.selectedLineSport) {
+    const detailsSection = document.createElement("section");
+    detailsSection.className = "dashboard-section";
+    detailsSection.innerHTML = `<h2>${state.selectedLineSport}: GameType</h2>`;
+    appendTable(
+      detailsSection,
+      ["GameType", "MainGameID", "EventType", "Game rows", "Events"],
+      (data.gameType || [])
+        .filter(row => row.sport === state.selectedLineSport)
+        .map(row => [row.game_type, row.unique_main_games, row.unique_event_types, row.games_count, row.events_count])
+    );
+    dashboard.appendChild(detailsSection);
+
+    const heatmapSection = document.createElement("section");
+    heatmapSection.className = "dashboard-section";
+    heatmapSection.innerHTML = `<h2>${state.selectedLineSport}: среднее по снимкам, день недели × час</h2>`;
+    heatmapSection.appendChild(renderHeatmap((data.hourlyAverage || []).filter(row => row.sport === state.selectedLineSport)));
+    dashboard.appendChild(heatmapSection);
+  }
 
   list.appendChild(dashboard);
 }

@@ -112,7 +112,7 @@ module.exports = async function handler(req, res) {
     }
     const runIds = runs.map(run => run.run_id).filter(Boolean);
 
-    const [sport, subsport] = await Promise.all([
+    const [sport, subsport, gameType] = await Promise.all([
       supabaseFetch("snapshot_sport_statistics", {
         params: {
           select: "sport,unique_main_games,unique_main_game_types,unique_event_types,games_count,events_count",
@@ -125,6 +125,14 @@ module.exports = async function handler(req, res) {
           select: "subsport,unique_main_games,games_count,events_count",
           run_id: `eq.${latest.run_id}`,
           order: "unique_main_games.desc"
+        }
+      }),
+      supabaseFetch("snapshot_game_type_statistics", {
+        params: {
+          select: "sport,game_type,unique_main_games,unique_event_types,games_count,events_count",
+          run_id: `eq.${latest.run_id}`,
+          order: "sport.asc,unique_main_games.desc",
+          limit: "5000"
         }
       })
     ]);
@@ -144,6 +152,7 @@ module.exports = async function handler(req, res) {
       latest,
       sport,
       subsport,
+      gameType,
       hourlyAverage: averageHourlyByRun(runs, sportHistory),
       historyRuns: runs.length
     });

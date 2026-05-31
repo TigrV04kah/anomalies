@@ -16,9 +16,11 @@ const verdictFilter = document.querySelector("#verdictFilter");
 const refreshButton = document.querySelector("#refreshButton");
 const template = document.querySelector("#anomalyTemplate");
 const reviewersList = document.querySelector("#reviewersList");
+const defaultReviewerInput = document.querySelector("#defaultReviewer");
 const scopeTabs = document.querySelectorAll(".tab[data-scope]");
 const CHECK_HELP = {};
 const BASE_DOCUMENT_TITLE = document.title || "Line Monitor";
+const DEFAULT_REVIEWER_STORAGE_KEY = "line-monitor-default-reviewer";
 
 const REVIEWERS = [
   "Иванов Сергей",
@@ -62,6 +64,30 @@ for (const reviewer of REVIEWERS) {
   const option = document.createElement("option");
   option.value = reviewer;
   reviewersList.appendChild(option);
+}
+
+function storedReviewer() {
+  try {
+    return localStorage.getItem(DEFAULT_REVIEWER_STORAGE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function saveStoredReviewer(value) {
+  try {
+    if (value) {
+      localStorage.setItem(DEFAULT_REVIEWER_STORAGE_KEY, value);
+    } else {
+      localStorage.removeItem(DEFAULT_REVIEWER_STORAGE_KEY);
+    }
+  } catch {
+    // Local storage can be unavailable in restricted browser modes.
+  }
+}
+
+function defaultReviewer() {
+  return (defaultReviewerInput?.value || storedReviewer()).trim();
 }
 
 Object.assign(CHECK_HELP, {
@@ -193,7 +219,7 @@ function fillReview(form, item) {
     if (input) input.checked = true;
   }
   form.review_comment.value = item.review_comment || "";
-  form.reviewed_by.value = item.reviewed_by || "";
+  form.reviewed_by.value = item.reviewed_by || defaultReviewer();
 }
 
 function applyReviewState(article, node, item) {
@@ -226,6 +252,10 @@ async function saveReview(item, form, article) {
   if (!REVIEWERS.includes(reviewedBy)) {
     showMessage("Выберите проверяющего из списка", true);
     return;
+  }
+  saveStoredReviewer(reviewedBy);
+  if (defaultReviewerInput) {
+    defaultReviewerInput.value = reviewedBy;
   }
   const button = form.querySelector("button");
   button.disabled = true;
@@ -719,6 +749,24 @@ for (const tab of scopeTabs) {
     state.dirty = false;
     renderScopeTabs();
     loadAnomalies({ force: true });
+  });
+}
+
+if (defaultReviewerInput) {
+  defaultReviewerInput.value = storedReviewer();
+  defaultReviewerInput.addEventListener("change", () => {
+    const reviewer = defaultReviewerInput.value.trim();
+    if (reviewer && !REVIEWERS.includes(reviewer)) {
+      showMessage("Выберите проверяющего из списка", true);
+      return;
+    }
+    saveStoredReviewer(reviewer);
+    document.querySelectorAll('form.review input[name="reviewed_by"]').forEach(input => {
+      if (!input.value.trim()) {
+        input.value = reviewer;
+      }
+    });
+    showMessage(reviewer ? `Проверяющий сохранен: ${reviewer}` : "");
   });
 }
 

@@ -302,6 +302,21 @@ main {
   font-size: 18px;
 }
 
+.heatmap-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.heatmap-block {
+  display: grid;
+  gap: 8px;
+}
+
+.heatmap-block h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
 .heatmap-table {
   width: max-content;
   min-width: 100%;
@@ -321,7 +336,7 @@ main {
   position: sticky;
   left: 0;
   z-index: 1;
-  min-width: 140px;
+  min-width: 64px;
   background: #eef2f6;
   text-align: left;
 }

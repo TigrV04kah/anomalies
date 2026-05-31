@@ -158,7 +158,7 @@ def run(args):
         max_dd=max_dd.replace(tzinfo=timezone.utc).isoformat() if max_dd else None,
     )
     print(f"Synced Supabase rows: {synced_results}")
-    snapshot_stats = build_snapshot_statistics_rows(current_games, run_id)
+    snapshot_stats = build_snapshot_statistics_rows(current_games, run_id, run_started_at.isoformat())
     synced_snapshot_stats = sync_snapshot_statistics(snapshot_stats)
     print(f"Synced snapshot statistics: {synced_snapshot_stats}")
 

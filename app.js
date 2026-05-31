@@ -625,40 +625,64 @@ function renderDashboard() {
 }
 
 function renderHeatmap(hourly = []) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "heatmap-stack";
   const sports = [...new Set(hourly.map(row => row.sport))].sort();
-  const max = Math.max(1, ...hourly.map(row => Number(row.unique_main_games) || 0));
-  const byKey = new Map(hourly.map(row => [`${row.sport}|${row.hour_local}`, row]));
-  const table = document.createElement("table");
-  table.className = "heatmap-table";
-  const thead = document.createElement("thead");
-  const head = document.createElement("tr");
-  ["Sport", ...Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, "0"))].forEach(label => {
-    const th = document.createElement("th");
-    th.textContent = label;
-    head.appendChild(th);
-  });
-  thead.appendChild(head);
-  table.appendChild(thead);
+  const weekdays = [
+    [1, "Пн"],
+    [2, "Вт"],
+    [3, "Ср"],
+    [4, "Чт"],
+    [5, "Пт"],
+    [6, "Сб"],
+    [7, "Вс"]
+  ];
 
-  const tbody = document.createElement("tbody");
   for (const sport of sports) {
-    const tr = document.createElement("tr");
-    const sportCell = document.createElement("th");
-    sportCell.textContent = sport;
-    tr.appendChild(sportCell);
-    for (let hour = 0; hour < 24; hour += 1) {
-      const row = byKey.get(`${sport}|${hour}`);
-      const value = Number(row?.unique_main_games) || 0;
-      const td = document.createElement("td");
-      td.textContent = value ? fmtNumber(value) : "";
-      td.title = `${sport}, ${String(hour).padStart(2, "0")}:00 · MainGameID ${fmtNumber(value)} · events ${fmtNumber(row?.events_count || 0)}`;
-      td.style.setProperty("--heat", String(value / max));
-      tr.appendChild(td);
+    const sportRows = hourly.filter(row => row.sport === sport);
+    const byKey = new Map(sportRows.map(row => [`${row.weekday_local}|${row.hour_local}`, row]));
+    const block = document.createElement("section");
+    block.className = "heatmap-block";
+    const title = document.createElement("h3");
+    const sportAverage = sportRows[0]?.sport_average_main_games || 0;
+    title.textContent = `${sport} · среднее ${fmtNumber(Math.round(sportAverage * 10) / 10)} MainGameID`;
+    block.appendChild(title);
+
+    const table = document.createElement("table");
+    table.className = "heatmap-table";
+    const thead = document.createElement("thead");
+    const head = document.createElement("tr");
+    ["День", ...Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, "0"))].forEach(label => {
+      const th = document.createElement("th");
+      th.textContent = label;
+      head.appendChild(th);
+    });
+    thead.appendChild(head);
+    table.appendChild(thead);
+
+    const tbody = document.createElement("tbody");
+    for (const [weekday, label] of weekdays) {
+      const tr = document.createElement("tr");
+      const dayCell = document.createElement("th");
+      dayCell.textContent = label;
+      tr.appendChild(dayCell);
+      for (let hour = 0; hour < 24; hour += 1) {
+        const row = byKey.get(`${weekday}|${hour}`);
+        const value = Number(row?.unique_main_games_avg) || 0;
+        const relative = Math.min(2, Number(row?.relative_to_sport_average) || 0) / 2;
+        const td = document.createElement("td");
+        td.textContent = value ? fmtNumber(Math.round(value * 10) / 10) : "";
+        td.title = `${sport}, ${label} ${String(hour).padStart(2, "0")}:00 · среднее MainGameID ${fmtNumber(Math.round(value * 10) / 10)} · прогонов ${fmtNumber(row?.samples || 0)}`;
+        td.style.setProperty("--heat", String(relative));
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
     }
-    tbody.appendChild(tr);
+    table.appendChild(tbody);
+    block.appendChild(table);
+    wrapper.appendChild(block);
   }
-  table.appendChild(tbody);
-  return table;
+  return wrapper;
 }
 
 function renderLineDashboard() {
@@ -685,7 +709,7 @@ function renderLineDashboard() {
   metrics.appendChild(dashboardMetric("Игр в снимке", fmtNumber(latest.snapshot_games)));
   metrics.appendChild(dashboardMetric("Спортов", fmtNumber((data.sport || []).length)));
   metrics.appendChild(dashboardMetric("SubSport", fmtNumber((data.subsport || []).length)));
-  metrics.appendChild(dashboardMetric("Часовых ячеек", fmtNumber((data.hourly || []).length)));
+  metrics.appendChild(dashboardMetric("Прогонов в heatmap", fmtNumber(data.historyRuns || 0)));
   dashboard.appendChild(metrics);
 
   const sportSection = document.createElement("section");
@@ -717,8 +741,8 @@ function renderLineDashboard() {
 
   const heatmapSection = document.createElement("section");
   heatmapSection.className = "dashboard-section";
-  heatmapSection.innerHTML = "<h2>Тепловая карта по часам</h2>";
-  heatmapSection.appendChild(renderHeatmap(data.hourly || []));
+  heatmapSection.innerHTML = "<h2>Среднее по снимкам: день недели × час</h2>";
+  heatmapSection.appendChild(renderHeatmap(data.hourlyAverage || []));
   dashboard.appendChild(heatmapSection);
 
   list.appendChild(dashboard);

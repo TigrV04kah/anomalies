@@ -1,12 +1,12 @@
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 
 LOCAL_TZ = ZoneInfo("Europe/Minsk")
 
 
-def parse_start_hour(value):
+def parse_local_hour(value):
     if not value:
         return None
     try:
@@ -41,14 +41,6 @@ def collect_snapshot_statistics(games):
         "games_count": 0,
         "events_count": 0,
     })
-    hourly = defaultdict(lambda: {
-        "main_games": set(),
-        "game_type_keys": set(),
-        "event_types": set(),
-        "games_count": 0,
-        "events_count": 0,
-    })
-
     for game in games:
         main_game_id = game.get("MainGameId") or game.get("GameId")
         if main_game_id is None:
@@ -77,23 +69,13 @@ def collect_snapshot_statistics(games):
             subsport_item["games_count"] += 1
             subsport_item["events_count"] += events_count
 
-        hour = parse_start_hour(game.get("Start"))
-        if hour is not None:
-            hourly_item = hourly[(sport_name, hour)]
-            hourly_item["main_games"].add(main_game_id)
-            hourly_item["game_type_keys"].add(key)
-            hourly_item["event_types"].update(event_types)
-            hourly_item["games_count"] += 1
-            hourly_item["events_count"] += events_count
-
     return {
         "sport": sport,
         "subsport": subsport,
-        "hourly": hourly,
     }
 
 
-def build_snapshot_statistics_rows(games, run_id):
+def build_snapshot_statistics_rows(games, run_id, started_at=None):
     stats = collect_snapshot_statistics(games)
 
     sport_rows = []
@@ -118,18 +100,20 @@ def build_snapshot_statistics_rows(games, run_id):
             "events_count": item["events_count"],
         })
 
-    hourly_rows = []
-    for (sport_name, hour), item in sorted(stats["hourly"].items()):
-        hourly_rows.append({
-            "run_id": run_id,
-            "sport": sport_name,
+    hour = parse_local_hour(started_at) if started_at else datetime.now(timezone.utc).astimezone(LOCAL_TZ).hour
+    hourly_rows = [
+        {
+            "run_id": row["run_id"],
+            "sport": row["sport"],
             "hour_local": hour,
-            "unique_main_games": len(item["main_games"]),
-            "unique_main_game_types": len(item["game_type_keys"]),
-            "unique_event_types": len(item["event_types"]),
-            "games_count": item["games_count"],
-            "events_count": item["events_count"],
-        })
+            "unique_main_games": row["unique_main_games"],
+            "unique_main_game_types": row["unique_main_game_types"],
+            "unique_event_types": row["unique_event_types"],
+            "games_count": row["games_count"],
+            "events_count": row["events_count"],
+        }
+        for row in sport_rows
+    ]
 
     return {
         "sport": sport_rows,

@@ -12,6 +12,7 @@ const ACTIVE_CHECK_TITLES = [
   "Main = Period (average)",
   "Total = Ind total 1 + Ind Total 2 (average)",
   "Stat Conflicts",
+  "Individual Total Favorite Consistency",
   "Football Stat Relations",
   "basketball players",
   "Basketball Q4 Handicap Shift",

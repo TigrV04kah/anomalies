@@ -108,6 +108,11 @@ Object.assign(CHECK_HELP, {
     short: "Проверяет конфликт между фаворитом матча и фаворитом по статистическому рынку.",
     long: "Сначала определяется фаворит матча по рынкам p1/p2. Потом определяется фаворит по статистике: Corners, Tackles, ShotsOnTarget, ShotByGates, Save, GoalFromGates, PossessionPercentage. Если фавориты противоположны, строка считается аномалией. Для Save и GoalFromGates логика инвертирована."
   },
+  individual_total_favorite_consistency: {
+    title: "Individual Total Favorite Consistency",
+    short: "Проверяет, что индивидуальный тотал больше фаворита согласован с индивидуальным тоталом аутсайдера.",
+    long: "Для каждого GameID, где есть p1/p2 и IndTotal_1_B/IndTotal_2_B, определяется фаворит ниже 1.8. При одинаковом Param коэффициент фаворита должен быть ниже коэффициента аутсайдера. Если одинакового Param нет, центральный Param фаворита должен быть выше центрального Param аутсайдера."
+  },
   football_stat_relations: {
     title: "Football Stat Relations",
     short: "Проверяет согласованность ударной статистики в футболе.",
@@ -360,6 +365,12 @@ function describeAnomaly(item) {
     }
     return `Фаворит матча ${valueOrDash(payload.MatchFavorite)}, а фаворит статистики ${valueOrDash(payload.StatType)} - ${valueOrDash(payload.StatFavorite)}. Это противоположные стороны.`;
   }
+  if (item.check_name === "individual_total_favorite_consistency") {
+    if (payload.Scenario === "same_param_coef_direction") {
+      return `На одинаковый индивидуальный тотал ${valueOrDash(payload.FavoriteParam)} коэффициент фаворита ${valueOrDash(payload.Favorite)} не ниже коэффициента аутсайдера ${valueOrDash(payload.Outsider)}.`;
+    }
+    return `Центральный индивидуальный тотал фаворита ${valueOrDash(payload.Favorite)} (${valueOrDash(payload.FavoriteParam)}) не выше тотала аутсайдера ${valueOrDash(payload.Outsider)} (${valueOrDash(payload.OutsiderParam)}).`;
+  }
   if (item.check_name === "football_stat_relations") {
     return `${valueOrDash(payload.Rule)}. ${valueOrDash(payload.SourceGameType)} сравнивается с ${valueOrDash(payload.TargetGameType)}.`;
   }
@@ -434,6 +445,8 @@ function idRowsFromPayload(payload) {
   add("Q1", payload.GameType, payload.EventType, 1, payload.Q1GameId);
   add("Q4 center", payload.GameType, payload.EventType, 4, payload.Q4CentralGameId);
   add("Q4 same param", payload.GameType, payload.EventType, 4, payload.Q4SameParamGameId);
+  add("Favorite ind total", payload.GameType, payload.FavoriteEventType, payload.Period, payload.FavoriteGameId);
+  add("Outsider ind total", payload.GameType, payload.OutsiderEventType, payload.Period, payload.OutsiderGameId);
 
   Object.entries(payload).forEach(([key, value]) => {
     const match = key.match(/^GID(\d+)$/);
@@ -482,6 +495,17 @@ function renderDetails(container, item) {
   } else if (item.check_name === "stat_conflicts") {
     appendTable(container, ["Stat", "Expected role", "Match fav", "Stat fav", "Match P1", "Match P2", "Stat P1", "Stat P2"], [
       [payload.StatType, payload.ExpectedStatRole, payload.MatchFavorite, payload.StatFavorite, lineValue("", payload.MatchCoefP1, payload.MatchProbabilityP1, payload.MatchSourceP1), lineValue("", payload.MatchCoefP2, payload.MatchProbabilityP2, payload.MatchSourceP2), lineValue("", payload.StatCoefP1, payload.StatProbabilityP1, payload.StatSourceP1), lineValue("", payload.StatCoefP2, payload.StatProbabilityP2, payload.StatSourceP2)]
+    ]);
+  } else if (item.check_name === "individual_total_favorite_consistency") {
+    appendTable(container, ["Scenario", "Favorite", "Outsider", "Match P1", "Match P2"], [
+      [payload.Scenario, payload.Favorite, payload.Outsider, lineValue("", payload.MatchCoefP1, payload.MatchProbabilityP1, payload.MatchSourceP1), lineValue("", payload.MatchCoefP2, payload.MatchProbabilityP2, payload.MatchSourceP2)]
+    ]);
+    appendTable(container, ["Side", "EventType", "Param", "Coef", "Source"], [
+      ["Favorite", payload.FavoriteEventType, payload.FavoriteParam, coefWithProbability(payload.FavoriteCoef, payload.FavoriteProbability), payload.FavoriteSource],
+      ["Outsider", payload.OutsiderEventType, payload.OutsiderParam, coefWithProbability(payload.OutsiderCoef, payload.OutsiderProbability), payload.OutsiderSource]
+    ]);
+    appendTable(container, ["Favorite GameID", "Outsider GameID", "Param delta"], [
+      [payload.FavoriteGameId, payload.OutsiderGameId, payload.ParamDelta]
     ]);
   } else if (item.check_name === "football_stat_relations") {
     appendTable(container, ["Rule", "Source", "Target"], [

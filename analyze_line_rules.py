@@ -558,6 +558,148 @@ def analyze_stat_conflicts(df):
     return rows
 
 
+def ind_total_side_lines(df):
+    required = {"GameId", "MainGameId", "GameType", "EventType", "Coef", "Param"}
+    if df.empty or not required.issubset(df.columns):
+        return pd.DataFrame()
+    rows = df[
+        (df["EventType"].isin(["IndTotal_1_B", "IndTotal_2_B"])) &
+        (df["Coef"] > 1) &
+        (df["Param"].notna())
+    ].copy()
+    if rows.empty:
+        return rows
+    rows["Side"] = rows["EventType"].map({"IndTotal_1_B": "p1", "IndTotal_2_B": "p2"})
+    rows["Probability"] = 1 / rows["Coef"]
+    rows["ProbabilityDistance"] = (rows["Probability"] - 0.5).abs()
+    rows["SourceLabel"] = rows.apply(source_label, axis=1)
+    return rows
+
+
+def best_param_line(rows):
+    if rows.empty:
+        return None
+    return rows.sort_values(["ProbabilityDistance", "Coef", "Param", "GameId"], kind="mergesort").iloc[0]
+
+
+def analyze_individual_total_favorite_consistency(df):
+    if df.empty:
+        return []
+    wins = df[
+        (df["EventType"].isin(["p1", "p2"])) &
+        (df["Coef"] > 1)
+    ].copy()
+    if wins.empty:
+        return []
+    win_pivot = wins.pivot_table(
+        index=["GameId", "MainGameId", "GameType", "Period"],
+        columns="EventType",
+        values="Coef",
+        aggfunc="mean",
+    ).reset_index()
+    if "p1" not in win_pivot.columns or "p2" not in win_pivot.columns:
+        return []
+    win_sources = {
+        (row["GameId"], row["EventType"]): source_label(row)
+        for _, row in wins.sort_values(["GameId", "EventType", "Coef"]).drop_duplicates(["GameId", "EventType"]).iterrows()
+    }
+    ind_totals = ind_total_side_lines(df)
+    if ind_totals.empty:
+        return []
+
+    info = game_info_map(df)
+    rows = []
+    for _, win in win_pivot.iterrows():
+        game_id = win.get("GameId")
+        p1_coef = win.get("p1")
+        p2_coef = win.get("p2")
+        favorite = get_match_favorite_by_coef_zone(p1_coef, p2_coef)
+        if favorite not in {"p1", "p2"}:
+            continue
+        outsider = "p2" if favorite == "p1" else "p1"
+        game_totals = ind_totals[ind_totals["GameId"] == game_id]
+        fav_event = "IndTotal_1_B" if favorite == "p1" else "IndTotal_2_B"
+        out_event = "IndTotal_2_B" if favorite == "p1" else "IndTotal_1_B"
+        fav_lines = game_totals[game_totals["EventType"] == fav_event]
+        out_lines = game_totals[game_totals["EventType"] == out_event]
+        if fav_lines.empty or out_lines.empty:
+            continue
+
+        common_params = sorted(set(fav_lines["Param"]).intersection(set(out_lines["Param"])))
+        if common_params:
+            for param in common_params:
+                fav_line = best_param_line(fav_lines[fav_lines["Param"] == param])
+                out_line = best_param_line(out_lines[out_lines["Param"] == param])
+                if fav_line is None or out_line is None or fav_line["Coef"] < out_line["Coef"]:
+                    continue
+                rows.append(add_game_info({
+                    "Status": "DIFF",
+                    "Rule": "same individual total parameter has worse favorite coefficient",
+                    "Scenario": "same_param_coef_direction",
+                    "GameId": game_id,
+                    "MainGameId": win.get("MainGameId"),
+                    "GameType": win.get("GameType"),
+                    "Period": win.get("Period"),
+                    "Favorite": favorite,
+                    "Outsider": outsider,
+                    "MatchCoefP1": rounded_number(p1_coef),
+                    "MatchProbabilityP1": rounded_probability(p1_coef),
+                    "MatchSourceP1": win_sources.get((game_id, "p1")),
+                    "MatchCoefP2": rounded_number(p2_coef),
+                    "MatchProbabilityP2": rounded_probability(p2_coef),
+                    "MatchSourceP2": win_sources.get((game_id, "p2")),
+                    "FavoriteEventType": fav_event,
+                    "OutsiderEventType": out_event,
+                    "FavoriteParam": rounded_number(fav_line["Param"]),
+                    "FavoriteCoef": rounded_number(fav_line["Coef"]),
+                    "FavoriteProbability": rounded_probability(fav_line["Coef"]),
+                    "FavoriteSource": fav_line.get("SourceLabel"),
+                    "OutsiderParam": rounded_number(out_line["Param"]),
+                    "OutsiderCoef": rounded_number(out_line["Coef"]),
+                    "OutsiderProbability": rounded_probability(out_line["Coef"]),
+                    "OutsiderSource": out_line.get("SourceLabel"),
+                    "FavoriteGameId": fav_line.get("GameId"),
+                    "OutsiderGameId": out_line.get("GameId"),
+                }, info, win.get("MainGameId")))
+            continue
+
+        fav_center = best_param_line(fav_lines)
+        out_center = best_param_line(out_lines)
+        if fav_center is None or out_center is None or fav_center["Param"] > out_center["Param"]:
+            continue
+        rows.append(add_game_info({
+            "Status": "DIFF",
+            "Rule": "favorite individual total center is not higher than outsider center",
+            "Scenario": "different_param_center_direction",
+            "GameId": game_id,
+            "MainGameId": win.get("MainGameId"),
+            "GameType": win.get("GameType"),
+            "Period": win.get("Period"),
+            "Favorite": favorite,
+            "Outsider": outsider,
+            "MatchCoefP1": rounded_number(p1_coef),
+            "MatchProbabilityP1": rounded_probability(p1_coef),
+            "MatchSourceP1": win_sources.get((game_id, "p1")),
+            "MatchCoefP2": rounded_number(p2_coef),
+            "MatchProbabilityP2": rounded_probability(p2_coef),
+            "MatchSourceP2": win_sources.get((game_id, "p2")),
+            "FavoriteEventType": fav_event,
+            "OutsiderEventType": out_event,
+            "FavoriteParam": rounded_number(fav_center["Param"]),
+            "FavoriteCoef": rounded_number(fav_center["Coef"]),
+            "FavoriteProbability": rounded_probability(fav_center["Coef"]),
+            "FavoriteSource": fav_center.get("SourceLabel"),
+            "OutsiderParam": rounded_number(out_center["Param"]),
+            "OutsiderCoef": rounded_number(out_center["Coef"]),
+            "OutsiderProbability": rounded_probability(out_center["Coef"]),
+            "OutsiderSource": out_center.get("SourceLabel"),
+            "FavoriteGameId": fav_center.get("GameId"),
+            "OutsiderGameId": out_center.get("GameId"),
+            "ParamDelta": rounded_number(fav_center["Param"] - out_center["Param"]),
+        }, info, win.get("MainGameId")))
+    return rows
+
+
 def central_total_lines(df):
     totals = df[
         (df["SportName"] == "Football") &
@@ -1342,6 +1484,7 @@ CHECKS = {
     "period_deviations_average": analyze_period_deviations_average,
     "total_deviations_average": analyze_total_deviations_average,
     "stat_conflicts": analyze_stat_conflicts,
+    "individual_total_favorite_consistency": analyze_individual_total_favorite_consistency,
     "football_stat_relations": analyze_football_stat_relations,
     "basketball_players": analyze_basketball_players,
     "basketball_q4_handicap_shift": analyze_basketball_q4_handicap_shift,

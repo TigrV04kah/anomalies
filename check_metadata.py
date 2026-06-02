@@ -6,6 +6,7 @@ CHECK_TITLES = {
     "period_deviations_average": "Main = Period (average)",
     "total_deviations_average": "Total = Ind total 1 + Ind Total 2 (average)",
     "stat_conflicts": "Stat Conflicts",
+    "individual_total_favorite_consistency": "Individual Total Favorite Consistency",
     "football_stat_relations": "Football Stat Relations",
     "basketball_players": "basketball players",
     "basketball_q4_handicap_shift": "Basketball Q4 Handicap Shift",
@@ -52,6 +53,16 @@ def stable_key(check_name, row):
             str(row.get("MainGameId", "")),
             str(row.get("GameId", "")),
             str(row.get("StatType", "")),
+        ])
+    if check_name == "individual_total_favorite_consistency":
+        return "|".join([
+            check_name,
+            str(row.get("MainGameId", "")),
+            str(row.get("GameId", "")),
+            str(row.get("GameType", "")),
+            str(row.get("Scenario", "")),
+            str(row.get("FavoriteEventType", "")),
+            str(row.get("FavoriteParam", "")),
         ])
     if check_name == "football_stat_relations":
         return "|".join([

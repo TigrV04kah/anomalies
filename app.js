@@ -415,6 +415,45 @@ function appendTable(container, columns, rows) {
   container.appendChild(table);
 }
 
+function idRowsFromPayload(payload) {
+  const rows = [];
+  const seen = new Set();
+  const add = (scope, gameType, eventType, period, gameId) => {
+    if (gameId === null || gameId === undefined || gameId === "") return;
+    const key = `${scope}|${gameType}|${eventType}|${period}|${gameId}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    rows.push([scope, gameType || "-", eventType || "-", period || "-", gameId]);
+  };
+
+  add("MainGameID", payload.GameType, payload.EventType || payload.Type || payload.StatType, "-", payload.MainGameId);
+  add("GameID", payload.GameType, payload.EventType || payload.Type || payload.StatType, payload.Period, payload.GameId);
+  add("Full game", payload.GameType, payload.EventType, 0, payload.FullGameId);
+  add("Source", payload.SourceGameType, payload.SourceCenterEventType || payload.EventType, "-", payload.SourceGameId);
+  add("Target", payload.TargetGameType, payload.TargetCenterEventType || payload.EventType, "-", payload.TargetGameId);
+  add("Q1", payload.GameType, payload.EventType, 1, payload.Q1GameId);
+  add("Q4 center", payload.GameType, payload.EventType, 4, payload.Q4CentralGameId);
+  add("Q4 same param", payload.GameType, payload.EventType, 4, payload.Q4SameParamGameId);
+
+  Object.entries(payload).forEach(([key, value]) => {
+    const match = key.match(/^GID(\d+)$/);
+    if (match) {
+      add(`Period ${match[1]}`, payload.GameType, payload.EventType, match[1], value);
+    }
+  });
+  return rows;
+}
+
+function appendIdentityTables(container, payload, item) {
+  appendTable(container, ["MainGameID", "GameType", "EventType", "Occurrences"], [
+    [payload.MainGameId || payload.GameId, payload.GameType, payload.EventType || payload.Type || payload.StatType, item.occurrence_count]
+  ]);
+  const idRows = idRowsFromPayload(payload);
+  if (idRows.length) {
+    appendTable(container, ["Scope", "GameType", "EventType", "Period", "ID"], idRows);
+  }
+}
+
 function renderDetails(container, item) {
   const payload = item.payload_json || {};
   container.querySelectorAll(".details-table").forEach(table => table.remove());
@@ -503,9 +542,7 @@ function renderDetails(container, item) {
     appendTable(container, ["Field", "Value"], rows);
   }
 
-  appendTable(container, ["MainGameId", "GameType", "EventType", "Occurrences"], [
-    [payload.MainGameId || payload.GameId, payload.GameType, payload.EventType || payload.Type || payload.StatType, item.occurrence_count]
-  ]);
+  appendIdentityTables(container, payload, item);
 }
 
 function renderGuide() {

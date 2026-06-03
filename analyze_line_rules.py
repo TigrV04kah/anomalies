@@ -582,6 +582,27 @@ def best_param_line(rows):
     return rows.sort_values(["ProbabilityDistance", "Coef", "Param", "GameId"], kind="mergesort").iloc[0]
 
 
+IND_TOTAL_SOFT_PROBABILITY_DELTA_PP = 1.5
+IND_TOTAL_SOFT_COEF_THRESHOLD = 1.1
+
+
+def individual_total_soft_reasons(favorite_coef, outsider_coef):
+    favorite_probability = probability(favorite_coef)
+    outsider_probability = probability(outsider_coef)
+    reasons = []
+    probability_delta_pp = None
+    if favorite_probability is not None and outsider_probability is not None:
+        probability_delta_pp = round((outsider_probability - favorite_probability) * 100, 4)
+        if probability_delta_pp <= IND_TOTAL_SOFT_PROBABILITY_DELTA_PP:
+            reasons.append(f"individual total probability delta <= {IND_TOTAL_SOFT_PROBABILITY_DELTA_PP} pp")
+    if (
+        pd.notna(favorite_coef) and favorite_coef < IND_TOTAL_SOFT_COEF_THRESHOLD or
+        pd.notna(outsider_coef) and outsider_coef < IND_TOTAL_SOFT_COEF_THRESHOLD
+    ):
+        reasons.append(f"individual total coefficient < {IND_TOTAL_SOFT_COEF_THRESHOLD}")
+    return reasons, probability_delta_pp
+
+
 def analyze_individual_total_favorite_consistency(df):
     if df.empty:
         return []
@@ -632,10 +653,18 @@ def analyze_individual_total_favorite_consistency(df):
                 out_line = best_param_line(out_lines[out_lines["Param"] == param])
                 if fav_line is None or out_line is None or fav_line["Coef"] < out_line["Coef"]:
                     continue
+                soft_reasons, probability_delta_pp = individual_total_soft_reasons(
+                    fav_line["Coef"],
+                    out_line["Coef"],
+                )
                 rows.append(add_game_info({
-                    "Status": "DIFF",
+                    "Status": "SOFT" if soft_reasons else "DIFF",
                     "Rule": "same individual total parameter has worse favorite coefficient",
                     "Scenario": "same_param_coef_direction",
+                    "SoftReason": "; ".join(soft_reasons),
+                    "IndividualProbabilityDeltaPp": probability_delta_pp,
+                    "SoftProbabilityDeltaThresholdPp": IND_TOTAL_SOFT_PROBABILITY_DELTA_PP,
+                    "SoftCoefThreshold": IND_TOTAL_SOFT_COEF_THRESHOLD,
                     "GameId": game_id,
                     "MainGameId": win.get("MainGameId"),
                     "GameType": win.get("GameType"),

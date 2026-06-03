@@ -111,7 +111,7 @@ Object.assign(CHECK_HELP, {
   individual_total_favorite_consistency: {
     title: "Individual Total Favorite Consistency",
     short: "Проверяет, что индивидуальный тотал больше фаворита согласован с индивидуальным тоталом аутсайдера.",
-    long: "Для каждого GameID, где есть p1/p2 и IndTotal_1_B/IndTotal_2_B, определяется фаворит ниже 1.8. При одинаковом Param коэффициент фаворита должен быть ниже коэффициента аутсайдера. Если одинакового Param нет, центральный Param фаворита должен быть выше центрального Param аутсайдера."
+    long: "Для каждого GameID, где есть p1/p2 и IndTotal_1_B/IndTotal_2_B, определяется фаворит ниже 1.8. При одинаковом Param коэффициент фаворита должен быть ниже коэффициента аутсайдера. Если дельта вероятностей индивидуальных тоталов не выше 1.5 п.п. или один из коэффициентов ниже 1.1, сигнал сохраняется как SOFT и выводится только во вкладке Soft. Если одинакового Param нет, центральный Param фаворита должен быть выше центрального Param аутсайдера."
   },
   football_stat_relations: {
     title: "Football Stat Relations",
@@ -366,8 +366,9 @@ function describeAnomaly(item) {
     return `Фаворит матча ${valueOrDash(payload.MatchFavorite)}, а фаворит статистики ${valueOrDash(payload.StatType)} - ${valueOrDash(payload.StatFavorite)}. Это противоположные стороны.`;
   }
   if (item.check_name === "individual_total_favorite_consistency") {
+    const soft = payload.SoftReason ? ` Soft: ${payload.SoftReason}.` : "";
     if (payload.Scenario === "same_param_coef_direction") {
-      return `На одинаковый индивидуальный тотал ${valueOrDash(payload.FavoriteParam)} коэффициент фаворита ${valueOrDash(payload.Favorite)} не ниже коэффициента аутсайдера ${valueOrDash(payload.Outsider)}.`;
+      return `На одинаковый индивидуальный тотал ${valueOrDash(payload.FavoriteParam)} коэффициент фаворита ${valueOrDash(payload.Favorite)} не ниже коэффициента аутсайдера ${valueOrDash(payload.Outsider)}. Дельта вероятностей: ${valueOrDash(payload.IndividualProbabilityDeltaPp)} п.п.${soft}`;
     }
     return `Центральный индивидуальный тотал фаворита ${valueOrDash(payload.Favorite)} (${valueOrDash(payload.FavoriteParam)}) не выше тотала аутсайдера ${valueOrDash(payload.Outsider)} (${valueOrDash(payload.OutsiderParam)}).`;
   }
@@ -499,6 +500,9 @@ function renderDetails(container, item) {
   } else if (item.check_name === "individual_total_favorite_consistency") {
     appendTable(container, ["Scenario", "Favorite", "Outsider", "Match P1", "Match P2"], [
       [payload.Scenario, payload.Favorite, payload.Outsider, lineValue("", payload.MatchCoefP1, payload.MatchProbabilityP1, payload.MatchSourceP1), lineValue("", payload.MatchCoefP2, payload.MatchProbabilityP2, payload.MatchSourceP2)]
+    ]);
+    appendTable(container, ["Status", "Probability delta, p.p.", "Soft reason"], [
+      [item.status, payload.IndividualProbabilityDeltaPp, payload.SoftReason]
     ]);
     appendTable(container, ["Side", "EventType", "Param", "Coef", "Source"], [
       ["Favorite", payload.FavoriteEventType, payload.FavoriteParam, coefWithProbability(payload.FavoriteCoef, payload.FavoriteProbability), payload.FavoriteSource],
@@ -887,7 +891,10 @@ function render() {
     const article = node.querySelector(".anomaly");
     const form = node.querySelector(".review");
 
-    node.querySelector(".status").textContent = item.status;
+    const statusNode = node.querySelector(".status");
+    statusNode.textContent = item.status;
+    statusNode.classList.toggle("status-soft", item.status === "SOFT");
+    article.classList.toggle("soft-anomaly", item.status === "SOFT");
     const help = helpFor(item);
     const titleNode = node.querySelector(".check-title");
     titleNode.textContent = item.check_title || item.check_name || "anomaly";
@@ -935,6 +942,7 @@ function renderScopeTabs() {
     tab.classList.toggle("active", active);
     tab.setAttribute("aria-selected", active ? "true" : "false");
   }
+  statusFilter.disabled = state.scope === "soft";
 }
 
 async function loadAnomalies({ force = false } = {}) {
@@ -957,7 +965,7 @@ async function loadAnomalies({ force = false } = {}) {
   try {
     const params = new URLSearchParams({
       scope: state.scope,
-      status: statusFilter.value,
+      status: state.scope === "soft" ? "SOFT" : statusFilter.value,
       verdict: verdictFilter.value,
       check_title: checkFilter.value,
       limit: "200"

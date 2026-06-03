@@ -183,6 +183,11 @@ main {
   background: #f4fbf7;
 }
 
+.anomaly.soft-anomaly {
+  border-color: rgba(148, 98, 0, 0.35);
+  background: #fffaf0;
+}
+
 .rowhead {
   display: flex;
   align-items: center;
@@ -201,6 +206,11 @@ main {
   background: #f8dedb;
   color: var(--danger);
   font-weight: 700;
+}
+
+.badge.status-soft {
+  background: #fff1cc;
+  color: var(--warn);
 }
 
 .check-title {

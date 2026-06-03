@@ -2,6 +2,7 @@ const { handleError, sendJson, supabaseFetch } = require("./_supabase");
 
 const ALLOWED_STATUSES = new Set([
   "DIFF",
+  "SOFT",
   "NO_PERIOD_FAVORITE",
   "PERIOD_BOTH_FAVORITE",
   "PERIOD_NO_FAVORITE",
@@ -28,10 +29,13 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const status = ALLOWED_STATUSES.has(req.query.status) ? req.query.status : "DIFF";
+    const isSoftScope = req.query.scope === "soft";
+    const status = isSoftScope
+      ? "SOFT"
+      : (ALLOWED_STATUSES.has(req.query.status) ? req.query.status : "DIFF");
     const verdict = req.query.verdict || "unreviewed";
     const checkTitle = req.query.check_title || "all";
-    const scope = req.query.scope === "history" ? "history" : "current";
+    const scope = req.query.scope === "history" || isSoftScope ? "history" : "current";
     const limit = Math.min(Number.parseInt(req.query.limit || "100", 10) || 100, 500);
     const latestRuns = await supabaseFetch("monitor_runs", {
       params: {

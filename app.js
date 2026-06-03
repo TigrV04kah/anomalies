@@ -111,7 +111,7 @@ Object.assign(CHECK_HELP, {
   individual_total_favorite_consistency: {
     title: "Individual Total Favorite Consistency",
     short: "Проверяет, что индивидуальный тотал больше фаворита согласован с индивидуальным тоталом аутсайдера.",
-    long: "Для каждого GameID, где есть p1/p2 и IndTotal_1_B/IndTotal_2_B, определяется фаворит ниже 1.8. При одинаковом Param коэффициент фаворита должен быть ниже коэффициента аутсайдера. Если дельта вероятностей индивидуальных тоталов не выше 1.5 п.п. или один из коэффициентов ниже 1.1, сигнал сохраняется как SOFT и выводится только во вкладке Soft. Если одинакового Param нет, сравниваются центральные линии сторон: у каждой стороны берется Param с коэффициентом, ближайшим к вероятности 0.5. Центральный Param фаворита должен быть выше центрального Param аутсайдера."
+    long: "Для каждого GameID, где есть p1/p2 и IndTotal_1_B/IndTotal_2_B, определяется фаворит ниже 1.8. При одинаковом Param коэффициент фаворита должен быть ниже коэффициента аутсайдера. Если дельта вероятностей индивидуальных тоталов не выше 1.5 п.п. или один из коэффициентов ниже 1.1, сигнал сохраняется как SOFT и выводится только во вкладке Soft. Если одинакового Param нет, сравниваются центральные линии сторон: у каждой стороны берется Param с коэффициентом, ближайшим к вероятности 0.5. Центральный Param фаворита должен быть выше центрального Param аутсайдера. Для центрального сценария дельта Param до 0.5 при разнице вероятностей до 20 п.п. тоже считается SOFT."
   },
   football_stat_relations: {
     title: "Football Stat Relations",
@@ -204,6 +204,12 @@ function lineValue(param, coef, probability, source) {
   }
   if (source) parts.push(String(source));
   return parts.join(" · ");
+}
+
+function matchLineForSide(payload, side) {
+  if (side !== "p1" && side !== "p2") return "-";
+  const suffix = side === "p1" ? "P1" : "P2";
+  return `${side} · ${lineValue("", payload[`MatchCoef${suffix}`], payload[`MatchProbability${suffix}`], payload[`MatchSource${suffix}`])}`;
 }
 
 function oddsText(payload, prefix) {
@@ -370,7 +376,7 @@ function describeAnomaly(item) {
     if (payload.Scenario === "same_param_coef_direction") {
       return `На одинаковый индивидуальный тотал ${valueOrDash(payload.FavoriteParam)} коэффициент фаворита ${valueOrDash(payload.Favorite)} не ниже коэффициента аутсайдера ${valueOrDash(payload.Outsider)}. Дельта вероятностей: ${valueOrDash(payload.IndividualProbabilityDeltaPp)} п.п.${soft}`;
     }
-    return `Одинакового Param нет, поэтому сравниваются центральные линии: фаворит ${valueOrDash(payload.Favorite)} (${valueOrDash(payload.FavoriteParam)}) не выше тотала аутсайдера ${valueOrDash(payload.Outsider)} (${valueOrDash(payload.OutsiderParam)}).`;
+    return `Одинакового Param нет, поэтому сравниваются центральные линии: фаворит ${valueOrDash(payload.Favorite)} (${valueOrDash(payload.FavoriteParam)}) не выше тотала аутсайдера ${valueOrDash(payload.Outsider)} (${valueOrDash(payload.OutsiderParam)}). Дельта Param: ${valueOrDash(payload.CentralParamAbsDelta)}, дельта вероятностей: ${valueOrDash(payload.CentralProbabilityDeltaPp)} п.п.${soft}`;
   }
   if (item.check_name === "football_stat_relations") {
     return `${valueOrDash(payload.Rule)}. ${valueOrDash(payload.SourceGameType)} сравнивается с ${valueOrDash(payload.TargetGameType)}.`;
@@ -498,11 +504,11 @@ function renderDetails(container, item) {
       [payload.StatType, payload.ExpectedStatRole, payload.MatchFavorite, payload.StatFavorite, lineValue("", payload.MatchCoefP1, payload.MatchProbabilityP1, payload.MatchSourceP1), lineValue("", payload.MatchCoefP2, payload.MatchProbabilityP2, payload.MatchSourceP2), lineValue("", payload.StatCoefP1, payload.StatProbabilityP1, payload.StatSourceP1), lineValue("", payload.StatCoefP2, payload.StatProbabilityP2, payload.StatSourceP2)]
     ]);
   } else if (item.check_name === "individual_total_favorite_consistency") {
-    appendTable(container, ["Scenario", "Favorite", "Outsider", "Match P1", "Match P2"], [
-      [payload.Scenario, payload.Favorite, payload.Outsider, lineValue("", payload.MatchCoefP1, payload.MatchProbabilityP1, payload.MatchSourceP1), lineValue("", payload.MatchCoefP2, payload.MatchProbabilityP2, payload.MatchSourceP2)]
+    appendTable(container, ["Scenario", "Favorite", "Outsider", "Match favorite", "Match outsider"], [
+      [payload.Scenario, payload.Favorite, payload.Outsider, matchLineForSide(payload, payload.Favorite), matchLineForSide(payload, payload.Outsider)]
     ]);
     appendTable(container, ["Status", "Probability delta, p.p.", "Soft reason"], [
-      [item.status, payload.IndividualProbabilityDeltaPp, payload.SoftReason]
+      [item.status, payload.IndividualProbabilityDeltaPp || payload.CentralProbabilityDeltaPp, payload.SoftReason]
     ]);
     appendTable(container, ["Side", "EventType", "Param", "Coef", "Source"], [
       ["Favorite", payload.FavoriteEventType, payload.FavoriteParam, coefWithProbability(payload.FavoriteCoef, payload.FavoriteProbability), payload.FavoriteSource],

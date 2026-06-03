@@ -584,6 +584,8 @@ def best_param_line(rows):
 
 IND_TOTAL_SOFT_PROBABILITY_DELTA_PP = 1.5
 IND_TOTAL_SOFT_COEF_THRESHOLD = 1.1
+IND_TOTAL_CENTER_SOFT_PARAM_DELTA = 0.5
+IND_TOTAL_CENTER_SOFT_PROBABILITY_DELTA_PP = 20.0
 
 
 def individual_total_soft_reasons(favorite_coef, outsider_coef):
@@ -601,6 +603,29 @@ def individual_total_soft_reasons(favorite_coef, outsider_coef):
     ):
         reasons.append(f"individual total coefficient < {IND_TOTAL_SOFT_COEF_THRESHOLD}")
     return reasons, probability_delta_pp
+
+
+def individual_total_center_soft_reasons(favorite_param, outsider_param, favorite_coef, outsider_coef):
+    favorite_probability = probability(favorite_coef)
+    outsider_probability = probability(outsider_coef)
+    param_delta = None
+    probability_delta_pp = None
+    reasons = []
+    if pd.notna(favorite_param) and pd.notna(outsider_param):
+        param_delta = round(abs(favorite_param - outsider_param), 4)
+    if favorite_probability is not None and outsider_probability is not None:
+        probability_delta_pp = round(abs(favorite_probability - outsider_probability) * 100, 4)
+    if (
+        param_delta is not None and
+        probability_delta_pp is not None and
+        param_delta <= IND_TOTAL_CENTER_SOFT_PARAM_DELTA and
+        probability_delta_pp <= IND_TOTAL_CENTER_SOFT_PROBABILITY_DELTA_PP
+    ):
+        reasons.append(
+            f"central param delta <= {IND_TOTAL_CENTER_SOFT_PARAM_DELTA} "
+            f"and probability delta <= {IND_TOTAL_CENTER_SOFT_PROBABILITY_DELTA_PP} pp"
+        )
+    return reasons, param_delta, probability_delta_pp
 
 
 def analyze_individual_total_favorite_consistency(df):
@@ -696,10 +721,21 @@ def analyze_individual_total_favorite_consistency(df):
         out_center = best_param_line(out_lines)
         if fav_center is None or out_center is None or fav_center["Param"] > out_center["Param"]:
             continue
+        soft_reasons, abs_param_delta, probability_delta_pp = individual_total_center_soft_reasons(
+            fav_center["Param"],
+            out_center["Param"],
+            fav_center["Coef"],
+            out_center["Coef"],
+        )
         rows.append(add_game_info({
-            "Status": "DIFF",
+            "Status": "SOFT" if soft_reasons else "DIFF",
             "Rule": "favorite individual total center is not higher than outsider center",
             "Scenario": "different_param_center_direction",
+            "SoftReason": "; ".join(soft_reasons),
+            "CentralParamAbsDelta": abs_param_delta,
+            "CentralProbabilityDeltaPp": probability_delta_pp,
+            "CentralSoftParamDeltaThreshold": IND_TOTAL_CENTER_SOFT_PARAM_DELTA,
+            "CentralSoftProbabilityDeltaThresholdPp": IND_TOTAL_CENTER_SOFT_PROBABILITY_DELTA_PP,
             "GameId": game_id,
             "MainGameId": win.get("MainGameId"),
             "GameType": win.get("GameType"),

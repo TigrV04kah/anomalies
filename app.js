@@ -101,7 +101,7 @@ Object.assign(CHECK_HELP, {
   total_deviations_average: {
     title: "Total = Ind total 1 + Ind Total 2 (average)",
     short: "Проверяет, согласован ли общий тотал с суммой индивидуальных тоталов команд.",
-    long: "Для каждого периода и GameType выбирается линия с коэффициентом, ближайшим к 1.95. После этого общий Total сравнивается с IndTotal1 + IndTotal2. Аномалия появляется, если Total больше ожидаемой суммы более чем на 1.5."
+    long: "Для каждого периода и GameType выбирается линия с коэффициентом, ближайшим к 1.95. После этого общий Total сравнивается с IndTotal1 + IndTotal2. Если выбранный коэффициент индивидуального тотала ниже 1.65, к его Param в расчете прибавляется 0.5. Волейбол period 0 исключен. Аномалия появляется, если Total больше ожидаемой суммы выше динамического порога: <=5: 1.0, <=10: 1.5, <=20: 2.0, <=35: 2.0, <=60: 3.0, <=80: 4.0, <=120: 6.0, >120: 8.0. Для Rugby критический порог дополнительно увеличивается на 1.0."
   },
   stat_conflicts: {
     title: "Stat Conflicts",
@@ -204,6 +204,16 @@ function lineValue(param, coef, probability, source) {
   }
   if (source) parts.push(String(source));
   return parts.join(" · ");
+}
+
+function adjustedParamText(payload, prefix) {
+  const original = payload[`${prefix}Original`] ?? payload[prefix];
+  const adjusted = payload[`${prefix}Adjusted`] ?? payload[prefix];
+  const adjustment = Number(payload[`${prefix}Adjustment`] || 0);
+  if (!Number.isFinite(adjustment) || adjustment === 0) {
+    return valueOrDash(adjusted);
+  }
+  return `${valueOrDash(original)} + ${valueOrDash(payload[`${prefix}Adjustment`])} = ${valueOrDash(adjusted)}`;
 }
 
 function matchLineForSide(payload, side) {
@@ -358,7 +368,7 @@ function describeAnomaly(item) {
     return `В матче фаворит ${valueOrDash(payload.MatchFavorite)}, но в периоде ${valueOrDash(payload.Period)} фаворит ${valueOrDash(payload.PeriodFavorite)}. GameType: ${valueOrDash(payload.GameType)}.`;
   }
   if (item.check_name === "total_deviations_average") {
-    return `Общий тотал ${valueOrDash(payload.Total)} не сходится с суммой индивидуальных тоталов ${valueOrDash(payload.IndTotal1)} + ${valueOrDash(payload.IndTotal2)} = ${valueOrDash(payload.Expected)}. Дельта: ${valueOrDash(payload.Delta)}.`;
+    return `Общий тотал ${valueOrDash(payload.Total)} не сходится с расчетной суммой индивидуальных тоталов ${adjustedParamText(payload, "IndTotal1")} + ${adjustedParamText(payload, "IndTotal2")} = ${valueOrDash(payload.Expected)}. Дельта: ${valueOrDash(payload.Delta)}, критический порог: ${valueOrDash(payload.CriticalDelta)}.`;
   }
   if (item.check_name === "period_deviations_average") {
     const periods = String(payload.Periods || "1+2").split("+").filter(Boolean);
@@ -488,8 +498,8 @@ function renderDetails(container, item) {
       [`Period ${valueOrDash(payload.Period)}`, payload.PeriodFavorite, lineValue("", payload.PeriodP1, payload.PeriodProbabilityP1, payload.PeriodSourceP1), payload.PeriodP1Zone, lineValue("", payload.PeriodP2, payload.PeriodProbabilityP2, payload.PeriodSourceP2), payload.PeriodP2Zone, payload.PeriodProbabilityDelta]
     ]);
   } else if (item.check_name === "total_deviations_average") {
-    appendTable(container, ["GameType", "Event side", "Period", "Total", "Ind total 1", "Ind total 2", "Expected", "Delta"], [
-      [payload.GameType, payload.Type, payload.Period, lineValue(payload.Total, payload.TotalCoef, payload.TotalProbability, payload.TotalSource), lineValue(payload.IndTotal1, payload.IndTotal1Coef, payload.IndTotal1Probability, payload.IndTotal1Source), lineValue(payload.IndTotal2, payload.IndTotal2Coef, payload.IndTotal2Probability, payload.IndTotal2Source), payload.Expected, payload.Delta]
+    appendTable(container, ["GameType", "Event side", "Period", "Total", "Ind total 1", "Calc ind 1", "Ind total 2", "Calc ind 2", "Expected", "Delta", "Critical"], [
+      [payload.GameType, payload.Type, payload.Period, lineValue(payload.Total, payload.TotalCoef, payload.TotalProbability, payload.TotalSource), lineValue(payload.IndTotal1Original ?? payload.IndTotal1, payload.IndTotal1Coef, payload.IndTotal1Probability, payload.IndTotal1Source), adjustedParamText(payload, "IndTotal1"), lineValue(payload.IndTotal2Original ?? payload.IndTotal2, payload.IndTotal2Coef, payload.IndTotal2Probability, payload.IndTotal2Source), adjustedParamText(payload, "IndTotal2"), payload.Expected, payload.Delta, payload.CriticalDelta]
     ]);
   } else if (item.check_name === "period_deviations_average") {
     const periods = String(payload.Periods || "1+2").split("+").filter(Boolean);

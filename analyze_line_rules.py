@@ -352,14 +352,24 @@ def analyze_period_deviations_average(df):
 def analyze_total_deviations_average(df):
     if df.empty:
         return []
+    event_types = [
+        "Total_B", "Total_M",
+        "IndTotal_1_B", "IndTotal_1_M",
+        "IndTotal_2_B", "IndTotal_2_M",
+    ]
+    individual_event_types = {
+        "IndTotal_1_B", "IndTotal_1_M",
+        "IndTotal_2_B", "IndTotal_2_M",
+    }
     filtered = df[
-        (df["SportName"] == "Football") &
-        (df["Coef"].between(1.65, 2.3)) &
-        (df["EventType"].isin([
-            "Total_B", "Total_M",
-            "IndTotal_1_B", "IndTotal_1_M",
-            "IndTotal_2_B", "IndTotal_2_M",
-        ]))
+        ~((df["SportName"] == "Volleyball") & (df["Period"] == 0)) &
+        (df["EventType"].isin(event_types)) &
+        (df["Coef"] > 1) &
+        (df["Coef"] <= 2.3)
+    ].copy()
+    filtered = filtered[
+        (filtered["EventType"].isin(individual_event_types)) |
+        (filtered["Coef"].between(1.65, 2.3))
     ].copy()
     if filtered.empty:
         return []
@@ -370,10 +380,17 @@ def analyze_total_deviations_average(df):
         ["MainGameId", "GameType", "Period", "EventType"],
         keep="first",
     )
+    closest_param["ParamAdjustment"] = 0.0
+    adjustment_mask = (
+        closest_param["EventType"].isin(individual_event_types) &
+        (closest_param["Coef"] < 1.65)
+    )
+    closest_param.loc[adjustment_mask, "ParamAdjustment"] = 0.5
+    closest_param["AdjustedParam"] = closest_param["Param"] + closest_param["ParamAdjustment"]
     pivot = closest_param.pivot_table(
         index=["MainGameId", "GameType"],
         columns=["EventType", "Period"],
-        values="Param",
+        values="AdjustedParam",
         aggfunc="first",
     )
     pivot.columns = [f"{event}_{period}_param" for event, period in pivot.columns]
@@ -395,9 +412,12 @@ def analyze_total_deviations_average(df):
             for _, item in pivot.loc[valid].iterrows():
                 expected = item[ind1_col] + item[ind2_col]
                 delta = item[total_col] - expected
-                if delta <= 1.5:
-                    continue
                 gi = info.get(item["MainGameId"], {})
+                threshold = period_deviation_threshold(item[total_col])
+                if threshold is not None and gi.get("SportName") == "Rugby":
+                    threshold += 1.0
+                if threshold is None or delta <= threshold:
+                    continue
                 total_line = detail_by_key.get((item["MainGameId"], item["GameType"], period, f"Total_{side}"))
                 ind1_line = detail_by_key.get((item["MainGameId"], item["GameType"], period, f"IndTotal_1_{side}"))
                 ind2_line = detail_by_key.get((item["MainGameId"], item["GameType"], period, f"IndTotal_2_{side}"))
@@ -416,16 +436,23 @@ def analyze_total_deviations_average(df):
                     "TotalCoef": rounded_number(total_line.get("Coef") if total_line is not None else None),
                     "TotalProbability": rounded_probability(total_line.get("Coef") if total_line is not None else None),
                     "TotalSource": source_label(total_line) if total_line is not None else None,
-                    "IndTotal1": round(item[ind1_col], 4),
+                    "IndTotal1": rounded_number(ind1_line.get("Param") if ind1_line is not None else None),
+                    "IndTotal1Adjusted": round(item[ind1_col], 4),
                     "IndTotal1Coef": rounded_number(ind1_line.get("Coef") if ind1_line is not None else None),
                     "IndTotal1Probability": rounded_probability(ind1_line.get("Coef") if ind1_line is not None else None),
                     "IndTotal1Source": source_label(ind1_line) if ind1_line is not None else None,
-                    "IndTotal2": round(item[ind2_col], 4),
+                    "IndTotal1Original": rounded_number(ind1_line.get("Param") if ind1_line is not None else None),
+                    "IndTotal1Adjustment": rounded_number(ind1_line.get("ParamAdjustment") if ind1_line is not None else None),
+                    "IndTotal2": rounded_number(ind2_line.get("Param") if ind2_line is not None else None),
+                    "IndTotal2Adjusted": round(item[ind2_col], 4),
                     "IndTotal2Coef": rounded_number(ind2_line.get("Coef") if ind2_line is not None else None),
                     "IndTotal2Probability": rounded_probability(ind2_line.get("Coef") if ind2_line is not None else None),
                     "IndTotal2Source": source_label(ind2_line) if ind2_line is not None else None,
+                    "IndTotal2Original": rounded_number(ind2_line.get("Param") if ind2_line is not None else None),
+                    "IndTotal2Adjustment": rounded_number(ind2_line.get("ParamAdjustment") if ind2_line is not None else None),
                     "Expected": round(expected, 4),
                     "Delta": round(delta, 4),
+                    "CriticalDelta": threshold,
                 })
     return sorted(rows, key=lambda row: float(row["Delta"]), reverse=True)
 

@@ -388,6 +388,11 @@ main {
   background: var(--panel);
 }
 
+.anomaly-main,
+.review {
+  min-width: 0;
+}
+
 .anomaly.review-defect {
   border-color: var(--lm-danger-border);
   background: var(--lm-danger-surface);
@@ -582,19 +587,27 @@ main {
   display: grid;
   grid-template-columns: 1fr;
   gap: var(--lm-space-4);
+  min-width: 0;
 }
 
-.details-grid > div {
+.details-grid > div:not(.table-scroll) {
   display: none;
+}
+
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--lm-radius-md);
+  background: var(--panel);
 }
 
 .details-table {
   width: 100%;
+  min-width: max(100%, calc(var(--columns, 4) * 112px));
   border-collapse: collapse;
-  table-layout: fixed;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: var(--lm-radius-md);
+  table-layout: auto;
+  border: 0;
   background: #fff;
   font-size: var(--lm-text-sm);
 }
@@ -605,7 +618,12 @@ main {
   border-bottom: 1px solid var(--line);
   text-align: left;
   vertical-align: top;
-  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.details-table th {
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .details-table th {

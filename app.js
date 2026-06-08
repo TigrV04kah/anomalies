@@ -526,8 +526,12 @@ function marketLabel(payload) {
 }
 
 function appendTable(container, columns, rows) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "table-scroll";
+
   const table = document.createElement("table");
   table.className = "details-table";
+  table.style.setProperty("--columns", String(columns.length));
 
   const thead = document.createElement("thead");
   const headRow = document.createElement("tr");
@@ -550,7 +554,8 @@ function appendTable(container, columns, rows) {
     tbody.appendChild(tr);
   }
   table.appendChild(tbody);
-  container.appendChild(table);
+  wrapper.appendChild(table);
+  container.appendChild(wrapper);
 }
 
 function idRowsFromPayload(payload) {

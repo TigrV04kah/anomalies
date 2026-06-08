@@ -10,9 +10,10 @@
   --lm-line-hover: #8fb3c1;
   --lm-text: #17202a;
   --lm-muted: #65717e;
+  --lm-on-accent: #ffffff;
   --lm-accent: #176b87;
   --lm-accent-shadow: rgba(23, 107, 135, 0.16);
-  --lm-accent-track: rgba(255, 255, 255, 0.2);
+  --lm-accent-track: rgba(23, 107, 135, 0.2);
   --lm-danger: #b42318;
   --lm-ok: #1f7a4d;
   --lm-warn: #946200;
@@ -85,6 +86,7 @@ body {
   background: var(--bg);
   color: var(--text);
   font: var(--lm-weight-regular) var(--lm-text-base) / var(--lm-leading-body) var(--lm-font-ui);
+  letter-spacing: 0;
 }
 
 .topbar {
@@ -99,6 +101,7 @@ body {
   border-bottom: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.97);
   box-shadow: var(--lm-shadow-topbar);
+  backdrop-filter: saturate(1.1);
 }
 
 .brand {
@@ -157,7 +160,7 @@ h1 {
 .toolbar {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(180px, 220px) minmax(130px, 170px) minmax(150px, 190px) auto;
+  grid-template-columns: minmax(0, 1fr) 190px 150px 160px auto;
   grid-template-areas:
     "tabs reviewer status verdict refresh"
     "checks checks checks checks checks";
@@ -183,6 +186,7 @@ h1 {
   background: transparent;
   color: var(--muted);
   box-shadow: none;
+  font-weight: var(--lm-weight-medium);
   cursor: pointer;
   transition: background-color 120ms ease, color 120ms ease;
 }
@@ -331,13 +335,13 @@ input:focus-visible,
 .check-filter-option.active {
   border-color: var(--accent);
   background: var(--accent);
-  color: #fff;
+  color: var(--lm-on-accent);
   box-shadow: var(--lm-shadow-chip);
 }
 
 .check-filter-option.active .check-filter-count {
   background: var(--lm-accent-track);
-  color: #fff;
+  color: var(--lm-on-accent);
 }
 
 button:not(.tab):not(.check-filter-option) {
@@ -458,6 +462,8 @@ main {
   border-radius: var(--lm-radius-md);
   background: var(--lm-surface-info);
   color: var(--text);
+  font-size: var(--lm-text-base);
+  line-height: var(--lm-leading-body);
 }
 
 .guide {
@@ -657,6 +663,8 @@ main {
 .base-favorite,
 .period-favorite,
 .key-value {
+  color: var(--text);
+  font-size: var(--lm-text-base);
   font-weight: var(--lm-weight-bold);
 }
 
@@ -686,6 +694,7 @@ main {
   color: var(--muted);
   font-size: var(--lm-text-xs);
   font-weight: var(--lm-weight-bold);
+  line-height: 1.4;
 }
 
 .review-defect .review-state {
@@ -709,6 +718,7 @@ main {
   align-items: center;
   color: var(--text);
   font-size: var(--lm-text-base);
+  cursor: pointer;
 }
 
 textarea {

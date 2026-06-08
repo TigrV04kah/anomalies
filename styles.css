@@ -131,6 +131,12 @@ input {
   padding: 0 10px;
 }
 
+#checkFilter[multiple] {
+  width: 360px;
+  height: 146px;
+  padding: 6px 10px;
+}
+
 button {
   border-color: var(--accent);
   background: var(--accent);

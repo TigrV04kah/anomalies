@@ -256,7 +256,9 @@ Total ~= IndTotal1 + IndTotal2
 Line selection:
 
 - for each `MainGameId`, `GameType`, `Period`, and side, choose the line closest to coefficient `1.95`;
-- if the chosen individual-total coefficient is below `1.65`, add `0.5` to that individual total `Param` for the sum calculation;
+- if any of the three selected lines has coefficient below `1.5` or above `2.6`, skip this group because there is no reliable central line;
+- if the chosen individual-total coefficient is between `1.5` and `1.65`, adjust that individual total `Param` toward the center: add `0.5` for `IndTotal_B`, subtract `0.5` for `IndTotal_M`;
+- if the chosen individual-total coefficient is between `2.3` and `2.6`, use the inverse adjustment: subtract `0.5` for `IndTotal_B`, add `0.5` for `IndTotal_M`;
 - `Volleyball` period `0` is excluded because full-match volleyball totals do not use the same additive logic;
 - anomaly if the delta is greater than the dynamic threshold based on `Total`: `<=5: 1.0`, `<=10: 1.5`, `<=20: 2.0`, `<=35: 2.0`, `<=60: 3.0`, `<=80: 4.0`, `<=120: 6.0`, `>120: 8.0`;
 - for `Rugby`, the critical threshold is increased by `1.0`.
@@ -302,6 +304,47 @@ Special case:
 Current excluded case:
 
 - `Yellow` is not checked in `Stat Conflicts`.
+
+### Individual Total Favorite Consistency
+
+Internal name:
+
+```text
+individual_total_favorite_consistency
+```
+
+Purpose:
+
+Checks whether the favorite side by match outcome is also stronger in individual total markets.
+
+Logic:
+
+- for each `GameID`, read match outcomes `p1` and `p2`;
+- match favorite exists only if its coefficient is below `1.8`;
+- compare `IndTotal_1_B` and `IndTotal_2_B`;
+- if both sides have the same `Param`, the favorite side should have a lower coefficient than the outsider side;
+- if the same `Param` is absent, compare the central individual total lines closest to 50% implied probability;
+- small probability deltas and very low coefficients are stored as `SOFT`.
+
+Rows where both compared individual-total sources are `XMathRobotLine` are intentionally excluded from this general check and emitted by the dedicated MathRobot check below.
+
+### MathRobot Individual Total Favorite Consistency
+
+Internal name:
+
+```text
+mathrobot_individual_total_favorite_consistency
+```
+
+Purpose:
+
+Separates the same individual-total favorite consistency pattern when both compared individual-total lines are from `XMathRobotLine`.
+
+Reason:
+
+The June 6-8 history showed this as a clean recurring pattern: most `Individual Total Favorite Consistency` signals came from `XMathRobotLine`, almost all on `Basketball/Main`, with the same parameter but a worse coefficient for the match favorite.
+
+This check uses the same payload shape and UI rendering as `Individual Total Favorite Consistency`; only the source filter differs.
 
 ### Football Stat Relations
 

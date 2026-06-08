@@ -352,6 +352,11 @@ def analyze_period_deviations_average(df):
 def analyze_total_deviations_average(df):
     if df.empty:
         return []
+    center_coef = 1.95
+    center_coef_min = 1.5
+    low_adjust_max = 1.65
+    high_adjust_min = 2.3
+    center_coef_max = 2.6
     event_types = [
         "Total_B", "Total_M",
         "IndTotal_1_B", "IndTotal_1_M",
@@ -365,27 +370,51 @@ def analyze_total_deviations_average(df):
         ~((df["SportName"] == "Volleyball") & (df["Period"] == 0)) &
         (df["EventType"].isin(event_types)) &
         (df["Coef"] > 1) &
-        (df["Coef"] <= 2.3)
-    ].copy()
-    filtered = filtered[
-        (filtered["EventType"].isin(individual_event_types)) |
-        (filtered["Coef"].between(1.65, 2.3))
+        (df["Param"].notna())
     ].copy()
     if filtered.empty:
         return []
-    filtered["CoefDistance"] = (filtered["Coef"] - 1.95).abs()
+    filtered["CoefDistance"] = (filtered["Coef"] - center_coef).abs()
     closest_param = filtered.sort_values(
         ["MainGameId", "GameType", "Period", "EventType", "CoefDistance", "Coef"]
     ).drop_duplicates(
         ["MainGameId", "GameType", "Period", "EventType"],
         keep="first",
     )
+    closest_param = closest_param[
+        closest_param["Coef"].between(center_coef_min, center_coef_max)
+    ].copy()
+    if closest_param.empty:
+        return []
     closest_param["ParamAdjustment"] = 0.0
-    adjustment_mask = (
+    individual_mask = (
         closest_param["EventType"].isin(individual_event_types) &
-        (closest_param["Coef"] < 1.65)
+        (closest_param["Coef"].notna())
     )
-    closest_param.loc[adjustment_mask, "ParamAdjustment"] = 0.5
+    low_adjustment_mask = (
+        individual_mask &
+        (closest_param["Coef"] < low_adjust_max)
+    )
+    high_adjustment_mask = (
+        individual_mask &
+        (closest_param["Coef"] > high_adjust_min)
+    )
+    closest_param.loc[
+        low_adjustment_mask & closest_param["EventType"].str.endswith("_B"),
+        "ParamAdjustment",
+    ] = 0.5
+    closest_param.loc[
+        low_adjustment_mask & closest_param["EventType"].str.endswith("_M"),
+        "ParamAdjustment",
+    ] = -0.5
+    closest_param.loc[
+        high_adjustment_mask & closest_param["EventType"].str.endswith("_B"),
+        "ParamAdjustment",
+    ] = -0.5
+    closest_param.loc[
+        high_adjustment_mask & closest_param["EventType"].str.endswith("_M"),
+        "ParamAdjustment",
+    ] = 0.5
     closest_param["AdjustedParam"] = closest_param["Param"] + closest_param["ParamAdjustment"]
     pivot = closest_param.pivot_table(
         index=["MainGameId", "GameType"],
@@ -613,6 +642,7 @@ IND_TOTAL_SOFT_PROBABILITY_DELTA_PP = 1.5
 IND_TOTAL_SOFT_COEF_THRESHOLD = 1.1
 IND_TOTAL_CENTER_SOFT_PARAM_DELTA = 0.5
 IND_TOTAL_CENTER_SOFT_PROBABILITY_DELTA_PP = 20.0
+MATHROBOT_SOURCE_MARKER = "XMathRobotLine"
 
 
 def individual_total_soft_reasons(favorite_coef, outsider_coef):
@@ -655,7 +685,16 @@ def individual_total_center_soft_reasons(favorite_param, outsider_param, favorit
     return reasons, param_delta, probability_delta_pp
 
 
-def analyze_individual_total_favorite_consistency(df):
+def is_mathrobot_individual_total_row(row):
+    favorite_source = str(row.get("FavoriteSource") or "")
+    outsider_source = str(row.get("OutsiderSource") or "")
+    return (
+        MATHROBOT_SOURCE_MARKER in favorite_source and
+        MATHROBOT_SOURCE_MARKER in outsider_source
+    )
+
+
+def analyze_individual_total_favorite_consistency_rows(df):
     if df.empty:
         return []
     wins = df[
@@ -789,6 +828,23 @@ def analyze_individual_total_favorite_consistency(df):
             "OutsiderGameId": out_center.get("GameId"),
             "ParamDelta": rounded_number(fav_center["Param"] - out_center["Param"]),
         }, info, win.get("MainGameId")))
+    return rows
+
+
+def analyze_individual_total_favorite_consistency(df):
+    return [
+        row for row in analyze_individual_total_favorite_consistency_rows(df)
+        if not is_mathrobot_individual_total_row(row)
+    ]
+
+
+def analyze_mathrobot_individual_total_favorite_consistency(df):
+    rows = []
+    for row in analyze_individual_total_favorite_consistency_rows(df):
+        if is_mathrobot_individual_total_row(row):
+            row = dict(row)
+            row["SourcePattern"] = MATHROBOT_SOURCE_MARKER
+            rows.append(row)
     return rows
 
 
@@ -1577,6 +1633,7 @@ CHECKS = {
     "total_deviations_average": analyze_total_deviations_average,
     "stat_conflicts": analyze_stat_conflicts,
     "individual_total_favorite_consistency": analyze_individual_total_favorite_consistency,
+    "mathrobot_individual_total_favorite_consistency": analyze_mathrobot_individual_total_favorite_consistency,
     "football_stat_relations": analyze_football_stat_relations,
     "basketball_players": analyze_basketball_players,
     "basketball_q4_handicap_shift": analyze_basketball_q4_handicap_shift,

@@ -7,6 +7,7 @@ CHECK_TITLES = {
     "total_deviations_average": "Total = Ind total 1 + Ind Total 2 (average)",
     "stat_conflicts": "Stat Conflicts",
     "individual_total_favorite_consistency": "Individual Total Favorite Consistency",
+    "mathrobot_individual_total_favorite_consistency": "MathRobot Individual Total Favorite Consistency",
     "football_stat_relations": "Football Stat Relations",
     "basketball_players": "basketball players",
     "basketball_q4_handicap_shift": "Basketball Q4 Handicap Shift",
@@ -54,7 +55,10 @@ def stable_key(check_name, row):
             str(row.get("GameId", "")),
             str(row.get("StatType", "")),
         ])
-    if check_name == "individual_total_favorite_consistency":
+    if check_name in {
+        "individual_total_favorite_consistency",
+        "mathrobot_individual_total_favorite_consistency",
+    }:
         return "|".join([
             check_name,
             str(row.get("MainGameId", "")),

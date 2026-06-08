@@ -9,7 +9,7 @@
     "check_name": "total_deviations_average",
     "check_title": "Total = Ind total 1 + Ind Total 2 (average)",
     "short_description": "Проверяет, согласован ли общий тотал с суммой индивидуальных тоталов команд.",
-    "full_description": "Для каждого периода и GameType выбирается линия с коэффициентом, ближайшим к 1.95. После этого общий Total сравнивается с IndTotal1 + IndTotal2. Если выбранный коэффициент индивидуального тотала ниже 1.65, к его Param в расчете прибавляется 0.5. Волейбол period 0 исключен. Аномалия появляется, если Total больше ожидаемой суммы выше динамического порога: <=5: 1.0, <=10: 1.5, <=20: 2.0, <=35: 2.0, <=60: 3.0, <=80: 4.0, <=120: 6.0, >120: 8.0. Для Rugby критический порог дополнительно увеличивается на 1.0."
+    "full_description": "Для каждого периода и GameType выбирается линия с коэффициентом, ближайшим к 1.95. Если выбранный коэффициент любой из трех нужных линий ниже 1.5 или выше 2.6, проверка по этой группе не выполняется. После этого общий Total сравнивается с IndTotal1 + IndTotal2. Для индивидуальных тоталов Param корректируется к центральному: при коэффициенте 1.5-1.65 для IndTotal_B прибавляется 0.5, для IndTotal_M отнимается 0.5; при коэффициенте 2.3-2.6 корректировка обратная: для IndTotal_B отнимается 0.5, для IndTotal_M прибавляется 0.5. Волейбол period 0 исключен. Аномалия появляется, если Total больше ожидаемой суммы выше динамического порога: <=5: 1.0, <=10: 1.5, <=20: 2.0, <=35: 2.0, <=60: 3.0, <=80: 4.0, <=120: 6.0, >120: 8.0. Для Rugby критический порог дополнительно увеличивается на 1.0."
   },
   {
     "check_name": "stat_conflicts",
@@ -22,6 +22,12 @@
     "check_title": "Individual Total Favorite Consistency",
     "short_description": "Проверяет, что индивидуальный тотал больше фаворита согласован с индивидуальным тоталом аутсайдера.",
     "full_description": "Для каждого GameID, где есть исходы p1/p2 и рынки IndTotal_1_B/IndTotal_2_B, определяется фаворит по коэффициенту ниже 1.8. Если у сторон есть одинаковый Param индивидуального тотала больше, коэффициент фаворита на этот Param должен быть ниже коэффициента аутсайдера. Если дельта вероятностей индивидуальных тоталов не выше 1.5 п.п. или один из коэффициентов индивидуального тотала ниже 1.1, сигнал сохраняется как SOFT и выводится только во вкладке Soft. Если одинакового Param нет, сравниваются центральные линии сторон: у каждой стороны берется Param с коэффициентом, ближайшим к вероятности 0.5. Центральный индивидуальный тотал фаворита должен иметь больший Param, чем центральный индивидуальный тотал аутсайдера. Для центрального сценария дельта Param до 0.5 при разнице вероятностей до 20 п.п. тоже считается SOFT."
+  },
+  {
+    "check_name": "mathrobot_individual_total_favorite_consistency",
+    "check_title": "MathRobot Individual Total Favorite Consistency",
+    "short_description": "Checks the individual-total favorite consistency pattern only for XMathRobotLine.",
+    "full_description": "This is a source-specific version of Individual Total Favorite Consistency. It uses the same logic: if the match favorite is below 1.8 and both sides have the same IndTotal_B parameter, the favorite side should have a lower coefficient than the outsider side. If the same parameter is absent, central individual-total parameters are compared. A row belongs to this check only when both FavoriteSource and OutsiderSource contain XMathRobotLine; all other sources remain in Individual Total Favorite Consistency."
   },
   {
     "check_name": "football_stat_relations",

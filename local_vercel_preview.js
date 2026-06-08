@@ -18,7 +18,16 @@ const types = {
 
 function wrap(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
-  req.query = Object.fromEntries(url.searchParams.entries());
+  req.query = {};
+  for (const [key, value] of url.searchParams.entries()) {
+    if (Object.prototype.hasOwnProperty.call(req.query, key)) {
+      req.query[key] = Array.isArray(req.query[key])
+        ? [...req.query[key], value]
+        : [req.query[key], value];
+    } else {
+      req.query[key] = value;
+    }
+  }
   return url;
 }
 

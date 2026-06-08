@@ -23,6 +23,7 @@ const scopeTabs = document.querySelectorAll(".tab[data-scope]");
 const CHECK_HELP = {};
 const BASE_DOCUMENT_TITLE = document.title || "Line Monitor";
 const DEFAULT_REVIEWER_STORAGE_KEY = "line-monitor-default-reviewer";
+let previousCheckSelection = ["all"];
 
 const REVIEWERS = [
   "Иванов Сергей",
@@ -101,7 +102,7 @@ Object.assign(CHECK_HELP, {
   total_deviations_average: {
     title: "Total = Ind total 1 + Ind Total 2 (average)",
     short: "Проверяет, согласован ли общий тотал с суммой индивидуальных тоталов команд.",
-    long: "Для каждого периода и GameType выбирается линия с коэффициентом, ближайшим к 1.95. После этого общий Total сравнивается с IndTotal1 + IndTotal2. Если выбранный коэффициент индивидуального тотала ниже 1.65, к его Param в расчете прибавляется 0.5. Волейбол period 0 исключен. Аномалия появляется, если Total больше ожидаемой суммы выше динамического порога: <=5: 1.0, <=10: 1.5, <=20: 2.0, <=35: 2.0, <=60: 3.0, <=80: 4.0, <=120: 6.0, >120: 8.0. Для Rugby критический порог дополнительно увеличивается на 1.0."
+    long: "Для каждого периода и GameType выбирается линия с коэффициентом, ближайшим к 1.95. Если выбранный коэффициент любой из трех нужных линий ниже 1.5 или выше 2.6, проверка по этой группе не выполняется. После этого общий Total сравнивается с IndTotal1 + IndTotal2. Для индивидуальных тоталов Param корректируется к центральному: при коэффициенте 1.5-1.65 для IndTotal_B прибавляется 0.5, для IndTotal_M отнимается 0.5; при коэффициенте 2.3-2.6 корректировка обратная: для IndTotal_B отнимается 0.5, для IndTotal_M прибавляется 0.5. Волейбол period 0 исключен. Аномалия появляется, если Total больше ожидаемой суммы выше динамического порога: <=5: 1.0, <=10: 1.5, <=20: 2.0, <=35: 2.0, <=60: 3.0, <=80: 4.0, <=120: 6.0, >120: 8.0. Для Rugby критический порог дополнительно увеличивается на 1.0."
   },
   stat_conflicts: {
     title: "Stat Conflicts",
@@ -213,7 +214,8 @@ function adjustedParamText(payload, prefix) {
   if (!Number.isFinite(adjustment) || adjustment === 0) {
     return valueOrDash(adjusted);
   }
-  return `${valueOrDash(original)} + ${valueOrDash(payload[`${prefix}Adjustment`])} = ${valueOrDash(adjusted)}`;
+  const sign = adjustment > 0 ? "+" : "-";
+  return `${valueOrDash(original)} ${sign} ${valueOrDash(Math.abs(adjustment))} = ${valueOrDash(adjusted)}`;
 }
 
 function matchLineForSide(payload, side) {
@@ -362,6 +364,48 @@ async function loadCheckDefinitions() {
   }
 }
 
+function checkFilterOptions() {
+  return Array.from(checkFilter?.options || []);
+}
+
+function selectedCheckTitles() {
+  const selected = checkFilterOptions()
+    .filter(option => option.selected)
+    .map(option => option.value);
+  if (!selected.length || selected.includes("all")) {
+    return ["all"];
+  }
+  return selected;
+}
+
+function normalizeCheckFilterSelection() {
+  const options = checkFilterOptions();
+  const selected = options.filter(option => option.selected).map(option => option.value);
+  const hadAll = previousCheckSelection.includes("all");
+  const hasAll = selected.includes("all");
+
+  if (!selected.length || (hasAll && !hadAll)) {
+    options.forEach(option => {
+      option.selected = option.value === "all";
+    });
+  } else if (hasAll && selected.length > 1) {
+    options.forEach(option => {
+      if (option.value === "all") option.selected = false;
+    });
+  }
+
+  previousCheckSelection = checkFilterOptions()
+    .filter(option => option.selected)
+    .map(option => option.value);
+}
+
+function isIndividualTotalFavoriteCheck(item) {
+  return [
+    "individual_total_favorite_consistency",
+    "mathrobot_individual_total_favorite_consistency"
+  ].includes(item.check_name);
+}
+
 function describeAnomaly(item) {
   const payload = item.payload_json || {};
   if (item.check_name === "period_conflicts") {
@@ -381,7 +425,7 @@ function describeAnomaly(item) {
     }
     return `Фаворит матча ${valueOrDash(payload.MatchFavorite)}, а фаворит статистики ${valueOrDash(payload.StatType)} - ${valueOrDash(payload.StatFavorite)}. Это противоположные стороны.`;
   }
-  if (item.check_name === "individual_total_favorite_consistency") {
+  if (isIndividualTotalFavoriteCheck(item)) {
     const soft = payload.SoftReason ? ` Soft: ${payload.SoftReason}.` : "";
     if (payload.Scenario === "same_param_coef_direction") {
       return `На одинаковый индивидуальный тотал ${valueOrDash(payload.FavoriteParam)} коэффициент фаворита ${valueOrDash(payload.Favorite)} не ниже коэффициента аутсайдера ${valueOrDash(payload.Outsider)}. Дельта вероятностей: ${valueOrDash(payload.IndividualProbabilityDeltaPp)} п.п.${soft}`;
@@ -513,7 +557,7 @@ function renderDetails(container, item) {
     appendTable(container, ["Stat", "Expected role", "Match fav", "Stat fav", "Match P1", "Match P2", "Stat P1", "Stat P2"], [
       [payload.StatType, payload.ExpectedStatRole, payload.MatchFavorite, payload.StatFavorite, lineValue("", payload.MatchCoefP1, payload.MatchProbabilityP1, payload.MatchSourceP1), lineValue("", payload.MatchCoefP2, payload.MatchProbabilityP2, payload.MatchSourceP2), lineValue("", payload.StatCoefP1, payload.StatProbabilityP1, payload.StatSourceP1), lineValue("", payload.StatCoefP2, payload.StatProbabilityP2, payload.StatSourceP2)]
     ]);
-  } else if (item.check_name === "individual_total_favorite_consistency") {
+  } else if (isIndividualTotalFavoriteCheck(item)) {
     appendTable(container, ["Scenario", "Favorite", "Outsider", "Match favorite", "Match outsider"], [
       [payload.Scenario, payload.Favorite, payload.Outsider, matchLineForSide(payload, payload.Favorite), matchLineForSide(payload, payload.Outsider)]
     ]);
@@ -983,9 +1027,11 @@ async function loadAnomalies({ force = false } = {}) {
       scope: state.scope,
       status: state.scope === "soft" ? "SOFT" : statusFilter.value,
       verdict: verdictFilter.value,
-      check_title: checkFilter.value,
       limit: "200"
     });
+    for (const title of selectedCheckTitles()) {
+      params.append("check_title", title);
+    }
     const response = await fetch(`/api/anomalies?${params}`);
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Load failed");
@@ -1044,6 +1090,7 @@ refreshButton.addEventListener("click", () => {
   loadAnomalies({ force: true });
 });
 checkFilter.addEventListener("change", () => {
+  normalizeCheckFilterSelection();
   state.dirty = false;
   loadAnomalies({ force: true });
 });
@@ -1084,6 +1131,7 @@ if (defaultReviewerInput) {
 
 async function boot() {
   await loadCheckDefinitions();
+  normalizeCheckFilterSelection();
   renderScopeTabs();
   loadAnomalies();
 }

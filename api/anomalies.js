@@ -14,12 +14,32 @@ const ACTIVE_CHECK_TITLES = [
   "Total = Ind total 1 + Ind Total 2 (average)",
   "Stat Conflicts",
   "Individual Total Favorite Consistency",
+  "MathRobot Individual Total Favorite Consistency",
   "Football Stat Relations",
   "basketball players",
   "Basketball Q4 Handicap Shift",
   "Period Conflicts",
   "Tennis Special. What Earlear"
 ];
+
+function normalizeCheckTitles(value) {
+  const rawValues = Array.isArray(value) ? value : [value];
+  return rawValues
+    .flatMap(item => String(item || "").split(","))
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function quotedCheckTitle(title) {
+  return `"${String(title).replace(/"/g, '\\"')}"`;
+}
+
+function checkTitleFilter(titles) {
+  if (titles.length === 1) {
+    return `eq.${titles[0]}`;
+  }
+  return `in.(${titles.map(quotedCheckTitle).join(",")})`;
+}
 
 module.exports = async function handler(req, res) {
   if (req.method !== "GET") {
@@ -34,7 +54,11 @@ module.exports = async function handler(req, res) {
       ? "SOFT"
       : (ALLOWED_STATUSES.has(req.query.status) ? req.query.status : "DIFF");
     const verdict = req.query.verdict || "unreviewed";
-    const checkTitle = req.query.check_title || "all";
+    const requestedCheckTitles = normalizeCheckTitles(req.query.check_title);
+    const selectedCheckTitles = requestedCheckTitles.length && !requestedCheckTitles.includes("all")
+      ? requestedCheckTitles
+      : ACTIVE_CHECK_TITLES;
+    const hasExplicitCheckFilter = selectedCheckTitles !== ACTIVE_CHECK_TITLES;
     const scope = req.query.scope === "history" || isSoftScope ? "history" : "current";
     const limit = Math.min(Number.parseInt(req.query.limit || "100", 10) || 100, 500);
     const latestRuns = await supabaseFetch("monitor_runs", {
@@ -53,11 +77,7 @@ module.exports = async function handler(req, res) {
       limit: String(limit)
     };
 
-    if (checkTitle !== "all") {
-      params.check_title = `eq.${checkTitle}`;
-    } else {
-      params.check_title = `in.(${ACTIVE_CHECK_TITLES.map(title => `"${title}"`).join(",")})`;
-    }
+    params.check_title = checkTitleFilter(selectedCheckTitles);
     if (scope === "current" && latestRunId) {
       params.last_run_id = `eq.${latestRunId}`;
     }
@@ -81,7 +101,7 @@ module.exports = async function handler(req, res) {
         select: "result_key,check_name,status,first_seen_at,last_seen_at,last_run_id,occurrence_count,payload_json,verdict,review_comment,reviewed_by,reviewed_at"
       };
       delete legacyParams.check_title;
-      if (checkTitle !== "all") {
+      if (hasExplicitCheckFilter) {
         legacyParams.check_name = "eq.favorite_by_period";
       }
       items = await supabaseFetch("check_results", { params: legacyParams });
@@ -98,11 +118,7 @@ module.exports = async function handler(req, res) {
       status: `eq.${status}`,
       limit: "10000"
     };
-    if (checkTitle !== "all") {
-      statsBaseParams.check_title = `eq.${checkTitle}`;
-    } else {
-      statsBaseParams.check_title = `in.(${ACTIVE_CHECK_TITLES.map(title => `"${title}"`).join(",")})`;
-    }
+    statsBaseParams.check_title = checkTitleFilter(selectedCheckTitles);
     if (scope === "current" && latestRunId) {
       statsBaseParams.last_run_id = `eq.${latestRunId}`;
     }
@@ -114,7 +130,7 @@ module.exports = async function handler(req, res) {
       if (!missingCheckTitle) throw error;
       const legacyStatsParams = { ...statsBaseParams };
       delete legacyStatsParams.check_title;
-      if (checkTitle !== "all") {
+      if (hasExplicitCheckFilter) {
         legacyStatsParams.check_name = "eq.favorite_by_period";
       }
       statsRows = await supabaseFetch("check_results", { params: legacyStatsParams });

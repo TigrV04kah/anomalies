@@ -599,109 +599,209 @@ function appendIdentityTables(container, payload, item) {
   }
 }
 
+function compactCoef(coef, probability, source) {
+  const parts = [];
+  if (coef !== null && coef !== undefined && coef !== "") {
+    const probabilityText = fmtProbability(probability);
+    parts.push(`coef ${coef}${probabilityText ? ` (${probabilityText})` : ""}`);
+  }
+  if (source) parts.push(source);
+  return parts.join(" · ");
+}
+
+function setSummary(container, details) {
+  const normalized = [
+    details[0] || {},
+    details[1] || {},
+    details[2] || {},
+  ];
+  const blocks = Array.from(container.children).filter(child => !child.classList.contains("table-scroll"));
+  for (const [index, detail] of normalized.entries()) {
+    const block = blocks[index];
+    if (!block) continue;
+    const label = block.querySelector(".label");
+    const value = block.querySelector(index === 0 ? ".base-favorite" : index === 1 ? ".period-favorite" : ".key-value");
+    const sub = block.querySelector(index === 0 ? ".base-odds" : index === 1 ? ".period-odds" : ".key-sub");
+    if (label) label.textContent = detail.label || "-";
+    if (value) value.textContent = valueOrDash(detail.value);
+    if (sub) sub.textContent = valueOrDash(detail.sub);
+  }
+}
+
+function summaryDetails(item) {
+  const payload = item.payload_json || {};
+  if (item.check_name === "total_deviations_average") {
+    return [
+      {
+        label: payload.Period ? `Период ${payload.Period}` : "Период 0",
+        value: `Total ${valueOrDash(payload.TotalOriginal ?? payload.Total)}`,
+        sub: compactCoef(payload.TotalCoef, payload.TotalProbability, payload.TotalSource),
+      },
+      {
+        label: "Ind 1 / Ind 2",
+        value: `${valueOrDash(payload.IndTotal1Original ?? payload.IndTotal1)} + ${valueOrDash(payload.IndTotal2Original ?? payload.IndTotal2)}`,
+        sub: [compactCoef(payload.IndTotal1Coef, payload.IndTotal1Probability), compactCoef(payload.IndTotal2Coef, payload.IndTotal2Probability)].filter(Boolean).join(" / "),
+      },
+      {
+        label: "Ключ",
+        value: `Expected ${valueOrDash(payload.Expected)}`,
+        sub: `Δ ${valueOrDash(payload.Delta)} · crit ${valueOrDash(payload.CriticalDelta)}`,
+      },
+    ];
+  }
+  if (item.check_name === "period_deviations_average") {
+    const periods = String(payload.Periods || "1+2").split("+").filter(Boolean);
+    return [
+      {
+        label: "Период 0",
+        value: valueOrDash(payload.P0),
+        sub: compactCoef(payload.P0Coef, payload.P0Probability, payload.P0Sources),
+      },
+      {
+        label: periods.map(period => `P${period}`).join(" + ") || "Периоды",
+        value: periods.map(period => valueOrDash(payload[`P${period}`])).join(" + "),
+        sub: periods.map(period => compactCoef(payload[`P${period}Coef`], payload[`P${period}Probability`], payload[`P${period}Sources`])).filter(Boolean).join(" / "),
+      },
+      {
+        label: "Ключ",
+        value: `Δ ${valueOrDash(payload.Delta)}`,
+        sub: `crit ${valueOrDash(payload.CriticalDelta)}`,
+      },
+    ];
+  }
+  if (item.check_name === "stat_conflicts") {
+    return [
+      {
+        label: "Матч",
+        value: valueOrDash(payload.MatchFavorite),
+        sub: `P1 ${compactCoef(payload.MatchCoefP1, payload.MatchProbabilityP1)} · P2 ${compactCoef(payload.MatchCoefP2, payload.MatchProbabilityP2)}`,
+      },
+      {
+        label: valueOrDash(payload.StatType),
+        value: valueOrDash(payload.StatFavorite),
+        sub: `P1 ${compactCoef(payload.StatCoefP1, payload.StatProbabilityP1)} · P2 ${compactCoef(payload.StatCoefP2, payload.StatProbabilityP2)}`,
+      },
+      {
+        label: "Ключ",
+        value: valueOrDash(payload.ExpectedStatRole),
+        sub: "conflict",
+      },
+    ];
+  }
+  if (isIndividualTotalFavoriteCheck(item)) {
+    return [
+      {
+        label: "Favorite",
+        value: `${valueOrDash(payload.Favorite)} · ${valueOrDash(payload.FavoriteParam)}`,
+        sub: compactCoef(payload.FavoriteCoef, payload.FavoriteProbability, payload.FavoriteSource),
+      },
+      {
+        label: "Outsider",
+        value: `${valueOrDash(payload.Outsider)} · ${valueOrDash(payload.OutsiderParam)}`,
+        sub: compactCoef(payload.OutsiderCoef, payload.OutsiderProbability, payload.OutsiderSource),
+      },
+      {
+        label: "Ключ",
+        value: valueOrDash(payload.Scenario),
+        sub: `Δ ${valueOrDash(payload.IndividualProbabilityDeltaPp || payload.CentralProbabilityDeltaPp)} p.p.`,
+      },
+    ];
+  }
+  if (item.check_name === "football_stat_relations") {
+    return [
+      {
+        label: valueOrDash(payload.SourceGameType),
+        value: valueOrDash(payload.SourceFavorite || payload.SourceCenterParam),
+        sub: compactCoef(payload.SourceCenterCoef, payload.SourceCenterProbability, payload.SourceCenterSource),
+      },
+      {
+        label: valueOrDash(payload.TargetGameType),
+        value: valueOrDash(payload.TargetFavorite || payload.TargetCenterParam),
+        sub: compactCoef(payload.TargetCenterCoef, payload.TargetCenterProbability, payload.TargetCenterSource),
+      },
+      {
+        label: "Ключ",
+        value: valueOrDash(payload.Rule),
+        sub: `${valueOrDash(payload.SourceGameId)} → ${valueOrDash(payload.TargetGameId)}`,
+      },
+    ];
+  }
+  if (item.check_name === "basketball_players") {
+    return [
+      {
+        label: "Player",
+        value: valueOrDash(payload.Player),
+        sub: [payload.Stat, payload.EventType].filter(Boolean).join(" · "),
+      },
+      {
+        label: "Line",
+        value: valueOrDash(payload.CenterParam ?? payload.PeriodParam ?? payload.LeftParam),
+        sub: compactCoef(payload.CenterCoef ?? payload.PeriodCoef ?? payload.LeftCoef, payload.CenterProbability ?? payload.PeriodProbability ?? payload.LeftProbability),
+      },
+      {
+        label: "Ключ",
+        value: valueOrDash(payload.Delta ?? payload.ParamDiff),
+        sub: valueOrDash(payload.Rule),
+      },
+    ];
+  }
+  if (item.check_name === "basketball_q4_handicap_shift") {
+    return [
+      {
+        label: "Q1",
+        value: valueOrDash(payload.Q1Param),
+        sub: compactCoef(payload.Q1Coef, payload.Q1Probability, payload.Q1Source),
+      },
+      {
+        label: "Q4",
+        value: valueOrDash(payload.Q4SameParam ?? payload.Q4CentralParam),
+        sub: compactCoef(payload.Q4SameParamCoef ?? payload.Q4CentralCoef, payload.Q4SameParamProbability ?? payload.Q4CentralProbability, payload.Q4SameParamSource ?? payload.Q4CentralSource),
+      },
+      {
+        label: "Ключ",
+        value: valueOrDash(payload.Scenario),
+        sub: `Δ ${valueOrDash(payload.AbsProbabilityDelta ?? payload.AbsParamDelta)}`,
+      },
+    ];
+  }
+  if (item.check_name === "period_conflicts") {
+    return [
+      {
+        label: "Матч",
+        value: valueOrDash(payload.MatchFavorite),
+        sub: `P1 ${compactCoef(payload.MatchP1, payload.MatchProbabilityP1)} · P2 ${compactCoef(payload.MatchP2, payload.MatchProbabilityP2)}`,
+      },
+      {
+        label: payload.Period ? `Период ${payload.Period}` : "Период",
+        value: valueOrDash(payload.PeriodFavorite),
+        sub: `P1 ${compactCoef(payload.PeriodP1, payload.PeriodProbabilityP1)} · P2 ${compactCoef(payload.PeriodP2, payload.PeriodProbabilityP2)}`,
+      },
+      {
+        label: "Ключ",
+        value: valueOrDash(payload.GameType),
+        sub: `Δ ${valueOrDash(payload.PeriodProbabilityDelta)}`,
+      },
+    ];
+  }
+  if (item.check_name === "tennis_special_what_earlear") {
+    return [
+      { label: "Ace", value: valueOrDash(payload.Param_Ace), sub: valueOrDash(payload.koef_ace_before_break) },
+      { label: "Breaks", value: valueOrDash(payload.Param_Breaks), sub: valueOrDash(payload.koef_break_before_ace) },
+      { label: "Ключ", value: "what earlier", sub: payload.Period ? `Period ${payload.Period}` : "-" },
+    ];
+  }
+  return [
+    { label: "GameType", value: valueOrDash(payload.GameType), sub: valueOrDash(payload.EventType || payload.Type || payload.StatType) },
+    { label: "Status", value: valueOrDash(item.status), sub: valueOrDash(item.check_name) },
+    { label: "Ключ", value: valueOrDash(payload.MainGameId || payload.GameId), sub: `${valueOrDash(item.occurrence_count)} раз` },
+  ];
+}
+
 function renderDetails(container, item) {
   const payload = item.payload_json || {};
-  container.querySelectorAll(".details-table").forEach(table => table.remove());
-  container.classList.add("details-grid");
-
-  if (item.check_name === "period_conflicts") {
-    appendTable(container, ["GameType", "SubSport", "Period"], [
-      [payload.GameType, payload.SubSport, payload.Period]
-    ]);
-    appendTable(container, ["Scope", "Favorite", "P1 coef", "P1 zone", "P2 coef", "P2 zone", "Probability delta"], [
-      ["Match", payload.MatchFavorite, lineValue("", payload.MatchP1, payload.MatchProbabilityP1, payload.MatchSourceP1), payload.MatchP1Zone, lineValue("", payload.MatchP2, payload.MatchProbabilityP2, payload.MatchSourceP2), payload.MatchP2Zone, payload.MatchProbabilityDelta],
-      [`Period ${valueOrDash(payload.Period)}`, payload.PeriodFavorite, lineValue("", payload.PeriodP1, payload.PeriodProbabilityP1, payload.PeriodSourceP1), payload.PeriodP1Zone, lineValue("", payload.PeriodP2, payload.PeriodProbabilityP2, payload.PeriodSourceP2), payload.PeriodP2Zone, payload.PeriodProbabilityDelta]
-    ]);
-  } else if (item.check_name === "total_deviations_average") {
-    appendTable(container, ["GameType", "Event side", "Period", "Total", "Calc total", "Ind total 1", "Calc ind 1", "Ind total 2", "Calc ind 2", "Expected", "Delta", "Critical"], [
-      [payload.GameType, payload.Type, payload.Period, lineValue(payload.TotalOriginal ?? payload.Total, payload.TotalCoef, payload.TotalProbability, payload.TotalSource), adjustedParamText(payload, "Total"), lineValue(payload.IndTotal1Original ?? payload.IndTotal1, payload.IndTotal1Coef, payload.IndTotal1Probability, payload.IndTotal1Source), adjustedParamText(payload, "IndTotal1"), lineValue(payload.IndTotal2Original ?? payload.IndTotal2, payload.IndTotal2Coef, payload.IndTotal2Probability, payload.IndTotal2Source), adjustedParamText(payload, "IndTotal2"), payload.Expected, payload.Delta, payload.CriticalDelta]
-    ]);
-  } else if (item.check_name === "period_deviations_average") {
-    const periods = String(payload.Periods || "1+2").split("+").filter(Boolean);
-    appendTable(container, ["GameType", "EventType", "Main", ...periods.map(period => `Period ${period}`), "Delta", "Critical"], [
-      [payload.GameType, payload.EventType, lineValue(payload.P0, payload.P0Coef, payload.P0Probability, payload.P0Sources), ...periods.map(period => lineValue(payload[`P${period}`], payload[`P${period}Coef`], payload[`P${period}Probability`], payload[`P${period}Sources`])), payload.Delta, payload.CriticalDelta]
-    ]);
-    appendTable(container, ["Game ID main", ...periods.map(period => `Game ID p${period}`)], [
-      [payload.GID0, ...periods.map(period => payload[`GID${period}`])]
-    ]);
-  } else if (item.check_name === "stat_conflicts") {
-    appendTable(container, ["Stat", "Expected role", "Match fav", "Stat fav", "Match P1", "Match P2", "Stat P1", "Stat P2"], [
-      [payload.StatType, payload.ExpectedStatRole, payload.MatchFavorite, payload.StatFavorite, lineValue("", payload.MatchCoefP1, payload.MatchProbabilityP1, payload.MatchSourceP1), lineValue("", payload.MatchCoefP2, payload.MatchProbabilityP2, payload.MatchSourceP2), lineValue("", payload.StatCoefP1, payload.StatProbabilityP1, payload.StatSourceP1), lineValue("", payload.StatCoefP2, payload.StatProbabilityP2, payload.StatSourceP2)]
-    ]);
-  } else if (isIndividualTotalFavoriteCheck(item)) {
-    appendTable(container, ["Scenario", "Favorite", "Outsider", "Match favorite", "Match outsider"], [
-      [payload.Scenario, payload.Favorite, payload.Outsider, matchLineForSide(payload, payload.Favorite), matchLineForSide(payload, payload.Outsider)]
-    ]);
-    appendTable(container, ["Status", "Probability delta, p.p.", "Soft reason"], [
-      [item.status, payload.IndividualProbabilityDeltaPp || payload.CentralProbabilityDeltaPp, payload.SoftReason]
-    ]);
-    appendTable(container, ["Side", "EventType", "Param", "Coef", "Source"], [
-      ["Favorite", payload.FavoriteEventType, payload.FavoriteParam, coefWithProbability(payload.FavoriteCoef, payload.FavoriteProbability), payload.FavoriteSource],
-      ["Outsider", payload.OutsiderEventType, payload.OutsiderParam, coefWithProbability(payload.OutsiderCoef, payload.OutsiderProbability), payload.OutsiderSource]
-    ]);
-    appendTable(container, ["Favorite GameID", "Outsider GameID", "Param delta"], [
-      [payload.FavoriteGameId, payload.OutsiderGameId, payload.ParamDelta]
-    ]);
-  } else if (item.check_name === "football_stat_relations") {
-    appendTable(container, ["Rule", "Source", "Target"], [
-      [payload.Rule, payload.SourceGameType, payload.TargetGameType]
-    ]);
-    appendTable(container, ["Source game", "Target game", "Source P1", "Source P2", "Target P1", "Target P2"], [
-      [payload.SourceGameId, payload.TargetGameId, lineValue("", payload.SourceCoefP1, payload.SourceProbabilityP1, payload.SourceContoraP1), lineValue("", payload.SourceCoefP2, payload.SourceProbabilityP2, payload.SourceContoraP2), lineValue("", payload.TargetCoefP1, payload.TargetProbabilityP1, payload.TargetContoraP1), lineValue("", payload.TargetCoefP2, payload.TargetProbabilityP2, payload.TargetContoraP2)]
-    ]);
-    appendTable(container, ["Source center", "Target center", "Source coef", "Target coef"], [
-      [lineValue(payload.SourceCenterParam, payload.SourceCenterCoef, payload.SourceCenterProbability, payload.SourceCenterSource), lineValue(payload.TargetCenterParam, payload.TargetCenterCoef, payload.TargetCenterProbability, payload.TargetCenterSource), coefWithProbability(payload.SourceCenterCoef, payload.SourceCenterProbability), coefWithProbability(payload.TargetCenterCoef, payload.TargetCenterProbability)]
-    ]);
-  } else if (item.check_name === "basketball_players") {
-    appendTable(container, ["Rule", "Player", "Stat", "EventType", "Period"], [
-      [payload.Rule, payload.Player, payload.Stat, payload.EventType, payload.Period]
-    ]);
-    if (payload.Rule === "player points period center deviates from full game share") {
-      appendTable(container, ["Period param", "Period coef", "Full param", "Full coef", "Expected", "Delta", "Limit"], [
-        [lineValue(payload.PeriodParam, payload.PeriodCoef, payload.PeriodProbability, payload.PeriodSource), coefWithProbability(payload.PeriodCoef, payload.PeriodProbability), lineValue(payload.FullParam, payload.FullCoef, payload.FullProbability, payload.FullSource), coefWithProbability(payload.FullCoef, payload.FullProbability), payload.ExpectedParam, payload.Delta, payload.DeltaLimit]
-      ]);
-      appendTable(container, ["Period game", "Full game"], [
-        [payload.GameId, payload.FullGameId]
-      ]);
-    } else if (payload.Rule === "player total coefficient monotonicity violation") {
-      appendTable(container, ["Direction", "Left param", "Left coef", "Right param", "Right coef", "Param diff", "Probability diff"], [
-        [payload.Direction, lineValue(payload.LeftParam, payload.LeftCoef, payload.LeftProbability, payload.LeftSource), coefWithProbability(payload.LeftCoef, payload.LeftProbability), lineValue(payload.RightParam, payload.RightCoef, payload.RightProbability, payload.RightSource), coefWithProbability(payload.RightCoef, payload.RightProbability), payload.ParamDiff, payload.ProbabilityDiff]
-      ]);
-    } else if (payload.Rule === "player combined stat center differs from component centers") {
-      appendTable(container, ["Center", "Coef", "Expected", "Delta", "Limit"], [
-        [lineValue(payload.CenterParam, payload.CenterCoef, payload.CenterProbability, payload.CenterSource), coefWithProbability(payload.CenterCoef, payload.CenterProbability), payload.ExpectedParam, payload.Delta, payload.DeltaLimit]
-      ]);
-      appendTable(container, ["Points", "Rebounds", "Assists"], [
-        [lineValue(payload.pointsParam, payload.pointsCoef, payload.pointsProbability, payload.pointsSource), lineValue(payload.reboundsParam, payload.reboundsCoef, payload.reboundsProbability, payload.reboundsSource), lineValue(payload.assistsParam, payload.assistsCoef, payload.assistsProbability, payload.assistsSource)]
-      ]);
-    }
-  } else if (item.check_name === "basketball_q4_handicap_shift") {
-    appendTable(container, ["Scenario", "EventType", "Q1 param", "Q1 coef", "Q1 probability"], [
-      [payload.Scenario, payload.EventType, lineValue(payload.Q1Param, payload.Q1Coef, payload.Q1Probability, payload.Q1Source), coefWithProbability(payload.Q1Coef, payload.Q1Probability), fmtProbability(payload.Q1Probability)]
-    ]);
-    appendTable(container, ["Q4 center param", "Q4 center coef", "Q4 center probability", "Param delta", "Param threshold"], [
-      [lineValue(payload.Q4CentralParam, payload.Q4CentralCoef, payload.Q4CentralProbability, payload.Q4CentralSource), coefWithProbability(payload.Q4CentralCoef, payload.Q4CentralProbability), fmtProbability(payload.Q4CentralProbability), payload.AbsParamDelta, payload.ParamDeltaThreshold]
-    ]);
-    if (payload.Scenario === "same_param_probability_delta") {
-      appendTable(container, ["Q4 same param", "Q4 same coef", "Q4 same probability", "Probability delta", "Probability threshold"], [
-        [lineValue(payload.Q4SameParam, payload.Q4SameParamCoef, payload.Q4SameParamProbability, payload.Q4SameParamSource), coefWithProbability(payload.Q4SameParamCoef, payload.Q4SameParamProbability), fmtProbability(payload.Q4SameParamProbability), payload.AbsProbabilityDelta, payload.ProbabilityDeltaThreshold]
-      ]);
-    }
-    appendTable(container, ["Q1 game", "Q4 center game", "Q4 same-param game"], [
-      [payload.Q1GameId, payload.Q4CentralGameId, payload.Q4SameParamGameId]
-    ]);
-  } else if (item.check_name === "tennis_special_what_earlear") {
-    appendTable(container, ["Period", "Ace total", "Breaks total", "Ace before break", "Break before ace"], [
-      [payload.Period, payload.Param_Ace, payload.Param_Breaks, payload.koef_ace_before_break, payload.koef_break_before_ace]
-    ]);
-  } else {
-    const rows = Object.entries(payload)
-      .filter(([, value]) => value !== null && value !== undefined && value !== "")
-      .map(([key, value]) => [key, value]);
-    appendTable(container, ["Field", "Value"], rows);
-  }
-
-  appendIdentityTables(container, payload, item);
+  container.querySelectorAll(".table-scroll").forEach(node => node.remove());
+  container.classList.remove("details-grid");
+  setSummary(container, summaryDetails(item));
 }
 
 function renderGuide() {
@@ -1039,8 +1139,7 @@ function render() {
     description.textContent = describeAnomaly(item);
     node.querySelector(".anomaly-main").insertBefore(description, node.querySelector(".grid"));
     renderDetails(node.querySelector(".grid"), item);
-    node.querySelector(".period-label").textContent = payload.Period ? `Период ${payload.Period}` : "Детали";
-    node.querySelector(".meta").textContent = `MainGameId ${payload.MainGameId || payload.GameId || "-"} · GameType ${payload.GameType || "-"} · ${item.occurrence_count} раз`;
+    node.querySelector(".card-meta").textContent = `MainGameId ${payload.MainGameId || payload.GameId || "-"} · GameType ${payload.GameType || "-"} · ${item.occurrence_count} раз`;
 
     fillReview(form, item);
     applyReviewState(article, node, item);

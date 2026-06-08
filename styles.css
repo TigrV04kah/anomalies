@@ -655,15 +655,21 @@ main {
 }
 
 .base-favorite,
-.period-favorite {
+.period-favorite,
+.key-value {
   font-weight: var(--lm-weight-bold);
 }
 
 .odds,
-.meta {
+.key-sub,
+.card-meta {
   color: var(--muted);
   font-size: var(--lm-text-sm);
   word-break: break-word;
+}
+
+.card-meta {
+  margin-top: var(--lm-space-5);
 }
 
 .review {

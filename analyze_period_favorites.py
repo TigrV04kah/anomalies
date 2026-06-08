@@ -14,7 +14,9 @@ OUTSIDER_THRESHOLD = 2.3
 
 def load_games(snapshot_zip):
     with zipfile.ZipFile(snapshot_zip) as archive:
-        json_name = next(name for name in archive.namelist() if name.lower().endswith(".json"))
+        json_name = next((name for name in archive.namelist() if name.lower().endswith(".json")), None)
+        if json_name is None:
+            raise RuntimeError(f"Snapshot ZIP has no .json file: {snapshot_zip}")
         with archive.open(json_name) as f:
             return json.load(f)
 

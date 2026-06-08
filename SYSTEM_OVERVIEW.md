@@ -257,6 +257,7 @@ Line selection:
 
 - for each `MainGameId`, `GameType`, `Period`, and side, choose the line closest to coefficient `1.95`;
 - if any of the three selected lines has coefficient below `1.5` or above `2.6`, skip this group because there is no reliable central line;
+- exception for `Tennis / Ace`: if the selected general `Total_B` has coefficient `2.4-2.7`, subtract `1.0` from the total before comparison; if the selected general `Total_M` has coefficient `2.4-2.7`, add `1.0` before comparison;
 - if the chosen individual-total coefficient is between `1.5` and `1.65`, adjust that individual total `Param` toward the center: add `0.5` for `IndTotal_B`, subtract `0.5` for `IndTotal_M`;
 - if the chosen individual-total coefficient is between `2.3` and `2.6`, use the inverse adjustment: subtract `0.5` for `IndTotal_B`, add `0.5` for `IndTotal_M`;
 - `Volleyball` period `0` is excluded because full-match volleyball totals do not use the same additive logic;

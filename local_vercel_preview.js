@@ -1,11 +1,6 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
-const anomalies = require("./api/anomalies");
-const review = require("./api/review");
-const dashboard = require("./api/dashboard");
-const lineDashboard = require("./api/line-dashboard");
-
 const root = __dirname;
 const port = Number(process.env.PORT || 8766);
 
@@ -44,22 +39,28 @@ function serveFile(res, filePath) {
   });
 }
 
+function apiHandler(relativePath) {
+  const fullPath = require.resolve(relativePath);
+  delete require.cache[fullPath];
+  return require(relativePath);
+}
+
 const server = http.createServer((req, res) => {
   const url = wrap(req, res);
   if (url.pathname === "/api/anomalies") {
-    anomalies(req, res);
+    apiHandler("./api/anomalies")(req, res);
     return;
   }
   if (url.pathname === "/api/review") {
-    review(req, res);
+    apiHandler("./api/review")(req, res);
     return;
   }
   if (url.pathname === "/api/dashboard") {
-    dashboard(req, res);
+    apiHandler("./api/dashboard")(req, res);
     return;
   }
   if (url.pathname === "/api/line-dashboard") {
-    lineDashboard(req, res);
+    apiHandler("./api/line-dashboard")(req, res);
     return;
   }
   const file = url.pathname === "/" ? "index.html" : url.pathname.slice(1);

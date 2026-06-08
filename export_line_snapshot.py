@@ -178,7 +178,7 @@ def as_float(value):
     try:
         return float(value)
     except (TypeError, ValueError):
-        return value
+        return None
 
 
 def iso_z(value):
@@ -189,8 +189,8 @@ def iso_z(value):
     else:
         try:
             dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        except ValueError:
-            return value
+        except (TypeError, ValueError):
+            return None
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -206,7 +206,9 @@ def load_reference_maps(snapshot_zip):
         return refs
 
     with zipfile.ZipFile(snapshot_zip) as archive:
-        json_name = next(name for name in archive.namelist() if name.lower().endswith(".json"))
+        json_name = next((name for name in archive.namelist() if name.lower().endswith(".json")), None)
+        if json_name is None:
+            raise RuntimeError(f"Snapshot ZIP has no .json file: {snapshot_zip}")
         with archive.open(json_name) as f:
             games = json.load(f)
 
@@ -333,19 +335,19 @@ def main():
     uri = env_value("LINE_MONGO_URI") or DEFAULT_MONGO_URI
     if not uri:
         raise RuntimeError("LINE_MONGO_URI environment variable is required")
-    collection = MongoClient(uri)["Line"]["LineGame"]
-
     query = build_query(args)
-    cursor = collection.find(query, no_cursor_timeout=True).batch_size(1000)
-    if args.limit:
-        cursor = cursor.limit(args.limit)
-
     games = []
-    try:
-        for doc in cursor:
-            games.append(convert_game(doc, refs))
-    finally:
-        cursor.close()
+    with MongoClient(uri) as client:
+        collection = client["Line"]["LineGame"]
+        cursor = collection.find(query).batch_size(1000)
+        if args.limit:
+            cursor = cursor.limit(args.limit)
+
+        try:
+            for doc in cursor:
+                games.append(convert_game(doc, refs))
+        finally:
+            cursor.close()
 
     timestamp = datetime.now().strftime("%d.%m.%Y %H-%M")
     output = Path(args.output or f"line_{timestamp}.zip")

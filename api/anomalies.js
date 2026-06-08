@@ -41,6 +41,43 @@ function checkTitleFilter(titles) {
   return `in.(${titles.map(quotedCheckTitle).join(",")})`;
 }
 
+async function fetchCurrentNewCheckStats(latestRunId) {
+  const stats = Object.fromEntries(ACTIVE_CHECK_TITLES.map(title => [title, { new: 0 }]));
+  stats.all = { new: 0 };
+  if (!latestRunId) return stats;
+
+  const params = {
+    select: "check_title",
+    status: "eq.DIFF",
+    verdict: "is.null",
+    last_run_id: `eq.${latestRunId}`,
+    limit: "10000"
+  };
+
+  let rows;
+  try {
+    rows = await supabaseFetch("check_results", { params });
+  } catch (error) {
+    const missingCheckTitle = String(error.message || "").includes("check_title");
+    if (!missingCheckTitle) throw error;
+    rows = await supabaseFetch("check_results", {
+      params: {
+        ...params,
+        select: "check_name"
+      }
+    });
+  }
+
+  for (const row of rows) {
+    const title = row.check_title || row.check_name;
+    if (!title) continue;
+    if (!stats[title]) stats[title] = { new: 0 };
+    stats[title].new += 1;
+    stats.all.new += 1;
+  }
+  return stats;
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== "GET") {
     res.setHeader("allow", "GET");
@@ -142,7 +179,9 @@ module.exports = async function handler(req, res) {
       else stats.new += 1;
     }
 
-    sendJson(res, 200, { items, stats });
+    const checkStats = await fetchCurrentNewCheckStats(latestRunId);
+
+    sendJson(res, 200, { items, stats, check_stats: checkStats });
   } catch (error) {
     handleError(res, error);
   }

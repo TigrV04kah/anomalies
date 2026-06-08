@@ -5,7 +5,9 @@ const state = {
   loading: false,
   dirty: false,
   scope: "current",
-  selectedLineSport: null
+  selectedLineSport: null,
+  checkStats: {},
+  checkStatsLoaded: false
 };
 
 const list = document.querySelector("#list");
@@ -102,7 +104,7 @@ Object.assign(CHECK_HELP, {
   total_deviations_average: {
     title: "Total = Ind total 1 + Ind Total 2 (average)",
     short: "Проверяет, согласован ли общий тотал с суммой индивидуальных тоталов команд.",
-    long: "Для каждого периода и GameType выбирается линия с коэффициентом, ближайшим к 1.95. Если выбранный коэффициент любой из трех нужных линий ниже 1.5 или выше 2.6, проверка по этой группе не выполняется. После этого общий Total сравнивается с IndTotal1 + IndTotal2. Для индивидуальных тоталов Param корректируется к центральному: при коэффициенте 1.5-1.65 для IndTotal_B прибавляется 0.5, для IndTotal_M отнимается 0.5; при коэффициенте 2.3-2.6 корректировка обратная: для IndTotal_B отнимается 0.5, для IndTotal_M прибавляется 0.5. Волейбол period 0 исключен. Аномалия появляется, если Total больше ожидаемой суммы выше динамического порога: <=5: 1.0, <=10: 1.5, <=20: 2.0, <=35: 2.0, <=60: 3.0, <=80: 4.0, <=120: 6.0, >120: 8.0. Для Rugby критический порог дополнительно увеличивается на 1.0."
+    long: "Для каждого периода и GameType выбирается линия с коэффициентом, ближайшим к 1.95. Если выбранный коэффициент любой из трех нужных линий ниже 1.5 или выше 2.6, проверка по этой группе не выполняется. Исключение: Tennis/Ace для общего Total допускает коэффициент 2.4-2.7 и корректирует общий тотал для сравнения: Total_B - 1, Total_M + 1. После этого общий Total сравнивается с IndTotal1 + IndTotal2. Для индивидуальных тоталов Param корректируется к центральному: при коэффициенте 1.5-1.65 для IndTotal_B прибавляется 0.5, для IndTotal_M отнимается 0.5; при коэффициенте 2.3-2.6 корректировка обратная: для IndTotal_B отнимается 0.5, для IndTotal_M прибавляется 0.5. Волейбол period 0 исключен. Аномалия появляется, если Total больше ожидаемой суммы выше динамического порога: <=5: 1.0, <=10: 1.5, <=20: 2.0, <=35: 2.0, <=60: 3.0, <=80: 4.0, <=120: 6.0, >120: 8.0. Для Rugby критический порог дополнительно увеличивается на 1.0."
   },
   stat_conflicts: {
     title: "Stat Conflicts",
@@ -339,6 +341,12 @@ function valueOrDash(value) {
   return value === null || value === undefined || value === "" ? "-" : value;
 }
 
+function appendSectionHeading(section, text) {
+  const heading = document.createElement("h2");
+  heading.textContent = text;
+  section.appendChild(heading);
+}
+
 function helpFor(item) {
   return CHECK_HELP[item.check_name] || Object.values(CHECK_HELP).find(help => help.title === item.check_title) || {
     title: item.check_title || item.check_name || "Anomaly",
@@ -364,39 +372,97 @@ async function loadCheckDefinitions() {
   }
 }
 
-function checkFilterOptions() {
-  return Array.from(checkFilter?.options || []);
+function checkFilterButtons() {
+  return Array.from(checkFilter?.querySelectorAll(".check-filter-option") || []);
+}
+
+function currentCheckSelection() {
+  return checkFilterButtons()
+    .filter(button => button.classList.contains("active"))
+    .map(button => button.dataset.value);
 }
 
 function selectedCheckTitles() {
-  const selected = checkFilterOptions()
-    .filter(option => option.selected)
-    .map(option => option.value);
+  const selected = currentCheckSelection();
   if (!selected.length || selected.includes("all")) {
     return ["all"];
   }
   return selected;
 }
 
-function normalizeCheckFilterSelection() {
-  const options = checkFilterOptions();
-  const selected = options.filter(option => option.selected).map(option => option.value);
-  const hadAll = previousCheckSelection.includes("all");
-  const hasAll = selected.includes("all");
+function sortedCheckDefinitions() {
+  return Object.values(CHECK_HELP)
+    .filter(definition => definition?.title)
+    .sort((left, right) => left.title.localeCompare(right.title, "ru", { sensitivity: "base" }));
+}
 
-  if (!selected.length || (hasAll && !hadAll)) {
-    options.forEach(option => {
-      option.selected = option.value === "all";
-    });
-  } else if (hasAll && selected.length > 1) {
-    options.forEach(option => {
-      if (option.value === "all") option.selected = false;
-    });
+function setCheckButtonActive(button, active) {
+  button.classList.toggle("active", active);
+  button.setAttribute("aria-pressed", active ? "true" : "false");
+}
+
+function updateCheckFilterButtons() {
+  const selected = new Set(previousCheckSelection.length ? previousCheckSelection : ["all"]);
+  for (const button of checkFilterButtons()) {
+    setCheckButtonActive(button, selected.has(button.dataset.value));
   }
+}
 
-  previousCheckSelection = checkFilterOptions()
-    .filter(option => option.selected)
-    .map(option => option.value);
+function normalizeCheckFilterSelection() {
+  const available = new Set(checkFilterButtons().map(button => button.dataset.value));
+  const selected = previousCheckSelection.filter(value => available.has(value));
+  if (!selected.length || selected.includes("all")) {
+    previousCheckSelection = ["all"];
+  } else {
+    previousCheckSelection = selected;
+  }
+  updateCheckFilterButtons();
+}
+
+function renderCheckFilter() {
+  if (!checkFilter) return;
+  checkFilter.textContent = "";
+  const items = [
+    { title: "\u0412\u0441\u0435", value: "all" },
+    ...sortedCheckDefinitions().map(definition => ({
+      title: definition.title,
+      value: definition.title
+    }))
+  ];
+  for (const item of items) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "check-filter-option";
+    button.dataset.value = item.value;
+    const title = document.createElement("span");
+    title.className = "check-filter-title";
+    title.textContent = item.title;
+    button.appendChild(title);
+    const counter = document.createElement("span");
+    counter.className = "check-filter-count";
+    counter.textContent = String(state.checkStats[item.value]?.new || 0);
+    counter.title = "Новые DIFF";
+    button.appendChild(counter);
+    button.title = `${item.title}: новых DIFF ${state.checkStats[item.value]?.new || 0}`;
+    button.setAttribute("aria-pressed", "false");
+    checkFilter.appendChild(button);
+  }
+  normalizeCheckFilterSelection();
+}
+
+function applyCheckFilterSelection(value) {
+  if (value === "all") {
+    previousCheckSelection = ["all"];
+  } else {
+    const selected = new Set(currentCheckSelection().filter(item => item !== "all"));
+    if (selected.has(value)) {
+      selected.delete(value);
+    } else {
+      selected.add(value);
+    }
+    previousCheckSelection = selected.size ? Array.from(selected) : ["all"];
+  }
+  updateCheckFilterButtons();
 }
 
 function isIndividualTotalFavoriteCheck(item) {
@@ -412,7 +478,7 @@ function describeAnomaly(item) {
     return `В матче фаворит ${valueOrDash(payload.MatchFavorite)}, но в периоде ${valueOrDash(payload.Period)} фаворит ${valueOrDash(payload.PeriodFavorite)}. GameType: ${valueOrDash(payload.GameType)}.`;
   }
   if (item.check_name === "total_deviations_average") {
-    return `Общий тотал ${valueOrDash(payload.Total)} не сходится с расчетной суммой индивидуальных тоталов ${adjustedParamText(payload, "IndTotal1")} + ${adjustedParamText(payload, "IndTotal2")} = ${valueOrDash(payload.Expected)}. Дельта: ${valueOrDash(payload.Delta)}, критический порог: ${valueOrDash(payload.CriticalDelta)}.`;
+    return `Общий тотал ${adjustedParamText(payload, "Total")} не сходится с расчетной суммой индивидуальных тоталов ${adjustedParamText(payload, "IndTotal1")} + ${adjustedParamText(payload, "IndTotal2")} = ${valueOrDash(payload.Expected)}. Дельта: ${valueOrDash(payload.Delta)}, критический порог: ${valueOrDash(payload.CriticalDelta)}.`;
   }
   if (item.check_name === "period_deviations_average") {
     const periods = String(payload.Periods || "1+2").split("+").filter(Boolean);
@@ -542,8 +608,8 @@ function renderDetails(container, item) {
       [`Period ${valueOrDash(payload.Period)}`, payload.PeriodFavorite, lineValue("", payload.PeriodP1, payload.PeriodProbabilityP1, payload.PeriodSourceP1), payload.PeriodP1Zone, lineValue("", payload.PeriodP2, payload.PeriodProbabilityP2, payload.PeriodSourceP2), payload.PeriodP2Zone, payload.PeriodProbabilityDelta]
     ]);
   } else if (item.check_name === "total_deviations_average") {
-    appendTable(container, ["GameType", "Event side", "Period", "Total", "Ind total 1", "Calc ind 1", "Ind total 2", "Calc ind 2", "Expected", "Delta", "Critical"], [
-      [payload.GameType, payload.Type, payload.Period, lineValue(payload.Total, payload.TotalCoef, payload.TotalProbability, payload.TotalSource), lineValue(payload.IndTotal1Original ?? payload.IndTotal1, payload.IndTotal1Coef, payload.IndTotal1Probability, payload.IndTotal1Source), adjustedParamText(payload, "IndTotal1"), lineValue(payload.IndTotal2Original ?? payload.IndTotal2, payload.IndTotal2Coef, payload.IndTotal2Probability, payload.IndTotal2Source), adjustedParamText(payload, "IndTotal2"), payload.Expected, payload.Delta, payload.CriticalDelta]
+    appendTable(container, ["GameType", "Event side", "Period", "Total", "Calc total", "Ind total 1", "Calc ind 1", "Ind total 2", "Calc ind 2", "Expected", "Delta", "Critical"], [
+      [payload.GameType, payload.Type, payload.Period, lineValue(payload.TotalOriginal ?? payload.Total, payload.TotalCoef, payload.TotalProbability, payload.TotalSource), adjustedParamText(payload, "Total"), lineValue(payload.IndTotal1Original ?? payload.IndTotal1, payload.IndTotal1Coef, payload.IndTotal1Probability, payload.IndTotal1Source), adjustedParamText(payload, "IndTotal1"), lineValue(payload.IndTotal2Original ?? payload.IndTotal2, payload.IndTotal2Coef, payload.IndTotal2Probability, payload.IndTotal2Source), adjustedParamText(payload, "IndTotal2"), payload.Expected, payload.Delta, payload.CriticalDelta]
     ]);
   } else if (item.check_name === "period_deviations_average") {
     const periods = String(payload.Periods || "1+2").split("+").filter(Boolean);
@@ -902,7 +968,7 @@ function renderLineDashboard() {
   if (state.selectedLineSport) {
     const detailsSection = document.createElement("section");
     detailsSection.className = "dashboard-section";
-    detailsSection.innerHTML = `<h2>${state.selectedLineSport}: GameType</h2>`;
+    appendSectionHeading(detailsSection, `${state.selectedLineSport}: GameType`);
     appendTable(
       detailsSection,
       ["GameType", "MainGameID", "EventType", "Game rows", "Events"],
@@ -914,7 +980,7 @@ function renderLineDashboard() {
 
     const heatmapSection = document.createElement("section");
     heatmapSection.className = "dashboard-section";
-    heatmapSection.innerHTML = `<h2>${state.selectedLineSport}: среднее по снимкам, день недели × час</h2>`;
+    appendSectionHeading(heatmapSection, `${state.selectedLineSport}: среднее по снимкам, день недели × час`);
     heatmapSection.appendChild(renderHeatmap((data.hourlyAverage || []).filter(row => row.sport === state.selectedLineSport)));
     dashboard.appendChild(heatmapSection);
   }
@@ -1036,7 +1102,10 @@ async function loadAnomalies({ force = false } = {}) {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Load failed");
     state.items = data.items || [];
+    state.checkStats = data.check_stats || {};
+    state.checkStatsLoaded = true;
     renderStats(data.stats || {});
+    renderCheckFilter();
     if (state.scope === "current") {
       updateDocumentTitle(data.stats?.defect);
     }
@@ -1089,8 +1158,10 @@ refreshButton.addEventListener("click", () => {
   state.dirty = false;
   loadAnomalies({ force: true });
 });
-checkFilter.addEventListener("change", () => {
-  normalizeCheckFilterSelection();
+checkFilter?.addEventListener("click", event => {
+  const button = event.target.closest(".check-filter-option");
+  if (!button || !checkFilter.contains(button)) return;
+  applyCheckFilterSelection(button.dataset.value);
   state.dirty = false;
   loadAnomalies({ force: true });
 });
@@ -1131,7 +1202,7 @@ if (defaultReviewerInput) {
 
 async function boot() {
   await loadCheckDefinitions();
-  normalizeCheckFilterSelection();
+  renderCheckFilter();
   renderScopeTabs();
   loadAnomalies();
 }

@@ -83,7 +83,9 @@ EXCLUDE_CONTORAS = {"XBetLineRegions", "XbetLineConstructor"}
 
 def load_games(snapshot_zip):
     with zipfile.ZipFile(snapshot_zip) as archive:
-        json_name = next(name for name in archive.namelist() if name.lower().endswith(".json"))
+        json_name = next((name for name in archive.namelist() if name.lower().endswith(".json")), None)
+        if json_name is None:
+            raise RuntimeError(f"Snapshot ZIP has no .json file: {snapshot_zip}")
         with archive.open(json_name) as f:
             return json.load(f)
 
@@ -207,6 +209,12 @@ def rounded_number(value, digits=4):
     return round(value, digits)
 
 
+def rounded_abs_diff(left, right, digits=4):
+    if pd.isna(left) or pd.isna(right):
+        return None
+    return round(abs(right - left), digits)
+
+
 def source_label(row):
     name = row.get("ContoraName")
     contora = row.get("Contora")
@@ -217,6 +225,17 @@ def source_label(row):
     if pd.notna(contora) and contora not in (None, ""):
         return str(contora)
     return None
+
+
+def first_source_row(group, event_type):
+    rows = group[group["EventType"] == event_type].copy()
+    if rows.empty:
+        return None
+    return rows.sort_values(
+        ["Coef", "GameId", "ContoraName", "Contora"],
+        na_position="last",
+        kind="mergesort",
+    ).iloc[0]
 
 
 def joined_sources(values):
@@ -357,6 +376,8 @@ def analyze_total_deviations_average(df):
     low_adjust_max = 1.65
     high_adjust_min = 2.3
     center_coef_max = 2.6
+    tennis_ace_total_adjust_min = 2.4
+    tennis_ace_total_adjust_max = 2.7
     event_types = [
         "Total_B", "Total_M",
         "IndTotal_1_B", "IndTotal_1_M",
@@ -366,6 +387,7 @@ def analyze_total_deviations_average(df):
         "IndTotal_1_B", "IndTotal_1_M",
         "IndTotal_2_B", "IndTotal_2_M",
     }
+    total_event_types = {"Total_B", "Total_M"}
     filtered = df[
         ~((df["SportName"] == "Volleyball") & (df["Period"] == 0)) &
         (df["EventType"].isin(event_types)) &
@@ -381,8 +403,15 @@ def analyze_total_deviations_average(df):
         ["MainGameId", "GameType", "Period", "EventType"],
         keep="first",
     )
+    tennis_ace_total_adjustment_mask = (
+        (closest_param["SportName"] == "Tennis") &
+        (closest_param["GameType"] == "Ace") &
+        (closest_param["EventType"].isin(total_event_types)) &
+        (closest_param["Coef"].between(tennis_ace_total_adjust_min, tennis_ace_total_adjust_max))
+    )
     closest_param = closest_param[
-        closest_param["Coef"].between(center_coef_min, center_coef_max)
+        closest_param["Coef"].between(center_coef_min, center_coef_max) |
+        tennis_ace_total_adjustment_mask
     ].copy()
     if closest_param.empty:
         return []
@@ -415,6 +444,20 @@ def analyze_total_deviations_average(df):
         high_adjustment_mask & closest_param["EventType"].str.endswith("_M"),
         "ParamAdjustment",
     ] = 0.5
+    tennis_ace_total_adjustment_mask = (
+        (closest_param["SportName"] == "Tennis") &
+        (closest_param["GameType"] == "Ace") &
+        (closest_param["EventType"].isin(total_event_types)) &
+        (closest_param["Coef"].between(tennis_ace_total_adjust_min, tennis_ace_total_adjust_max))
+    )
+    closest_param.loc[
+        tennis_ace_total_adjustment_mask & (closest_param["EventType"] == "Total_B"),
+        "ParamAdjustment",
+    ] = -1.0
+    closest_param.loc[
+        tennis_ace_total_adjustment_mask & (closest_param["EventType"] == "Total_M"),
+        "ParamAdjustment",
+    ] = 1.0
     closest_param["AdjustedParam"] = closest_param["Param"] + closest_param["ParamAdjustment"]
     pivot = closest_param.pivot_table(
         index=["MainGameId", "GameType"],
@@ -461,7 +504,10 @@ def analyze_total_deviations_average(df):
                     "Start": gi.get("Start"),
                     "Period": period,
                     "Type": side,
-                    "Total": round(item[total_col], 4),
+                    "Total": rounded_number(total_line.get("Param") if total_line is not None else None),
+                    "TotalAdjusted": round(item[total_col], 4),
+                    "TotalOriginal": rounded_number(total_line.get("Param") if total_line is not None else None),
+                    "TotalAdjustment": rounded_number(total_line.get("ParamAdjustment") if total_line is not None else None),
                     "TotalCoef": rounded_number(total_line.get("Coef") if total_line is not None else None),
                     "TotalProbability": rounded_probability(total_line.get("Coef") if total_line is not None else None),
                     "TotalSource": source_label(total_line) if total_line is not None else None,
@@ -570,14 +616,22 @@ def analyze_stat_conflicts(df):
     for (game_id, stat_type), group in stats.groupby(["GameId", "GameType"], dropna=False):
         if group.empty:
             continue
-        first = group.iloc[0]
+        first = group.sort_values(
+            ["MainGameId", "GameId", "GameType", "EventType", "Coef", "ContoraName", "Contora"],
+            na_position="last",
+            kind="mergesort",
+        ).iloc[0]
         match_p1 = first.get("p1")
         match_p2 = first.get("p2")
         match_fav = get_match_favorite_by_coef_zone(match_p1, match_p2)
-        stat_p1 = group[group["EventType"] == "p1"]["Coef"].iloc[0] if "p1" in set(group["EventType"]) else None
-        stat_p2 = group[group["EventType"] == "p2"]["Coef"].iloc[0] if "p2" in set(group["EventType"]) else None
-        stat_p1_source = source_label(group[group["EventType"] == "p1"].iloc[0]) if "p1" in set(group["EventType"]) else None
-        stat_p2_source = source_label(group[group["EventType"] == "p2"].iloc[0]) if "p2" in set(group["EventType"]) else None
+        stat_p1_values = group.loc[group["EventType"] == "p1", "Coef"]
+        stat_p2_values = group.loc[group["EventType"] == "p2", "Coef"]
+        stat_p1 = stat_p1_values.mean() if not stat_p1_values.empty else None
+        stat_p2 = stat_p2_values.mean() if not stat_p2_values.empty else None
+        stat_p1_source_row = first_source_row(group, "p1")
+        stat_p2_source_row = first_source_row(group, "p2")
+        stat_p1_source = source_label(stat_p1_source_row) if stat_p1_source_row is not None else None
+        stat_p2_source = source_label(stat_p2_source_row) if stat_p2_source_row is not None else None
         if not stat_conflict_by_coef_direction(match_fav, stat_p1, stat_p2, stat_type):
             continue
         if stat_type == "Tackles":
@@ -935,10 +989,10 @@ def analyze_football_stat_relations(df):
                     "TargetGameId": target.get("GameId"),
                     "SourceCenterParam": round(shots_on_target, 4),
                     "TargetCenterParam": round(shot_by_gates, 4),
-                    "SourceCenterCoef": round(source.get("Coef"), 4),
+                    "SourceCenterCoef": rounded_number(source.get("Coef")),
                     "SourceCenterProbability": rounded_probability(source.get("Coef")),
                     "SourceCenterSource": source_label(source),
-                    "TargetCenterCoef": round(target.get("Coef"), 4),
+                    "TargetCenterCoef": rounded_number(target.get("Coef")),
                     "TargetCenterProbability": rounded_probability(target.get("Coef")),
                     "TargetCenterSource": source_label(target),
                     "SourceCenterEventType": source.get("EventType"),
@@ -975,16 +1029,16 @@ def analyze_football_stat_relations(df):
                     "TargetGameId": target.get("GameId"),
                     "SourceFavorite": source_fav,
                     "TargetFavorite": target_fav,
-                    "SourceCoefP1": round(source.get("p1"), 4),
+                    "SourceCoefP1": rounded_number(source.get("p1")),
                     "SourceProbabilityP1": rounded_probability(source.get("p1")),
                     "SourceContoraP1": source.get("p1_source"),
-                    "SourceCoefP2": round(source.get("p2"), 4),
+                    "SourceCoefP2": rounded_number(source.get("p2")),
                     "SourceProbabilityP2": rounded_probability(source.get("p2")),
                     "SourceContoraP2": source.get("p2_source"),
-                    "TargetCoefP1": round(target.get("p1"), 4),
+                    "TargetCoefP1": rounded_number(target.get("p1")),
                     "TargetProbabilityP1": rounded_probability(target.get("p1")),
                     "TargetContoraP1": target.get("p1_source"),
-                    "TargetCoefP2": round(target.get("p2"), 4),
+                    "TargetCoefP2": rounded_number(target.get("p2")),
                     "TargetProbabilityP2": rounded_probability(target.get("p2")),
                     "TargetContoraP2": target.get("p2_source"),
                 }, info, main_game_id))
@@ -1414,15 +1468,15 @@ def analyze_basketball_player_monotonicity(df):
                 "EventType": event_type,
                 "Period": left.get("Period"),
                 "Direction": "over" if is_over else "under",
-                "LeftParam": round(left.get("Param"), 4),
+                "LeftParam": rounded_number(left.get("Param")),
                 "LeftCoef": round(left_coef, 4),
                 "LeftProbability": rounded_probability(left_coef),
                 "LeftSource": source_label(left),
-                "RightParam": round(right.get("Param"), 4),
+                "RightParam": rounded_number(right.get("Param")),
                 "RightCoef": round(right_coef, 4),
                 "RightProbability": rounded_probability(right_coef),
                 "RightSource": source_label(right),
-                "ParamDiff": round(abs(right.get("Param") - left.get("Param")), 4),
+                "ParamDiff": rounded_abs_diff(left.get("Param"), right.get("Param")),
                 "ProbabilityDiff": round(probability_diff, 6),
             })
     return rows
@@ -1573,14 +1627,14 @@ def analyze_basketball_q4_handicap_shift(df):
             "Start": q1.get("Start"),
             "EventType": event_type,
             "Q1GameId": q1.get("GameId"),
-            "Q1Param": round(q1.get("Param"), 4),
-            "Q1Coef": round(q1.get("Coef"), 4),
-            "Q1Probability": round(q1.get("Probability"), 6),
+            "Q1Param": rounded_number(q1.get("Param")),
+            "Q1Coef": rounded_number(q1.get("Coef")),
+            "Q1Probability": rounded_number(q1.get("Probability"), 6),
             "Q1Source": q1.get("SourceLabel"),
             "Q4CentralGameId": q4_center.get("GameId"),
-            "Q4CentralParam": round(q4_center.get("Param"), 4),
-            "Q4CentralCoef": round(q4_center.get("Coef"), 4),
-            "Q4CentralProbability": round(q4_center.get("Probability"), 6),
+            "Q4CentralParam": rounded_number(q4_center.get("Param")),
+            "Q4CentralCoef": rounded_number(q4_center.get("Coef")),
+            "Q4CentralProbability": rounded_number(q4_center.get("Probability"), 6),
             "Q4CentralSource": q4_center.get("SourceLabel"),
         }
 
@@ -1594,9 +1648,9 @@ def analyze_basketball_q4_handicap_shift(df):
             row.update({
                 "Scenario": "same_param_probability_delta",
                 "Q4SameParamGameId": same_q4.get("GameId"),
-                "Q4SameParam": round(same_q4.get("Param"), 4),
-                "Q4SameParamCoef": round(same_q4.get("Coef"), 4),
-                "Q4SameParamProbability": round(same_q4.get("Probability"), 6),
+                "Q4SameParam": rounded_number(same_q4.get("Param")),
+                "Q4SameParamCoef": rounded_number(same_q4.get("Coef")),
+                "Q4SameParamProbability": rounded_number(same_q4.get("Probability"), 6),
                 "Q4SameParamSource": same_q4.get("SourceLabel"),
                 "ProbabilityDelta": round(probability_delta, 6),
                 "AbsProbabilityDelta": round(abs_probability_delta, 6),

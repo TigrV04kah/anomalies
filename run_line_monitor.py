@@ -44,7 +44,9 @@ def load_snapshot(path):
     if not path.exists():
         return []
     with zipfile.ZipFile(path) as archive:
-        json_name = next(name for name in archive.namelist() if name.lower().endswith(".json"))
+        json_name = next((name for name in archive.namelist() if name.lower().endswith(".json")), None)
+        if json_name is None:
+            raise RuntimeError(f"Snapshot ZIP has no .json file: {path}")
         with archive.open(json_name) as f:
             return json.load(f)
 
@@ -72,21 +74,22 @@ def fetch_changed_games(query, refs, limit=0):
     uri = env_value("LINE_MONGO_URI") or DEFAULT_MONGO_URI
     if not uri:
         raise RuntimeError("LINE_MONGO_URI environment variable is required")
-    collection = MongoClient(uri)["Line"]["LineGame"]
-    cursor = collection.find(query, no_cursor_timeout=True).batch_size(1000)
-    if limit:
-        cursor = cursor.limit(limit)
-
     games = []
     max_dd = None
-    try:
-        for doc in cursor:
-            dd = doc.get("DD")
-            if dd is not None and (max_dd is None or dd > max_dd):
-                max_dd = dd
-            games.append(convert_game(doc, refs))
-    finally:
-        cursor.close()
+    with MongoClient(uri) as client:
+        collection = client["Line"]["LineGame"]
+        cursor = collection.find(query).batch_size(1000)
+        if limit:
+            cursor = cursor.limit(limit)
+
+        try:
+            for doc in cursor:
+                dd = doc.get("DD")
+                if dd is not None and (max_dd is None or dd > max_dd):
+                    max_dd = dd
+                games.append(convert_game(doc, refs))
+        finally:
+            cursor.close()
     return games, max_dd
 
 
@@ -102,6 +105,12 @@ def merge_games(existing_games, changed_games):
 def run(args):
     run_started_at = datetime.now(timezone.utc)
     run_id = run_started_at.strftime("%Y%m%dT%H%M%S%fZ")
+    if not supabase_is_configured():
+        raise RuntimeError(
+            "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY or SUPABASE_PUBLISHABLE_KEY "
+            "must be set to save check results"
+        )
+
     state_path = Path(args.state)
     snapshot_path = Path(args.snapshot)
     reports_dir = Path(args.reports_dir)
@@ -138,11 +147,6 @@ def run(args):
     for check_name, check_summary in check_summaries.items():
         print(f"{check_name}: rows={check_summary['rows']} statuses={check_summary['status_counts']}")
 
-    if not supabase_is_configured():
-        raise RuntimeError(
-            "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY or SUPABASE_PUBLISHABLE_KEY "
-            "must be set to save check results"
-        )
     run_finished_at = datetime.now(timezone.utc)
     synced_results = sync_supabase_run_results(
         run_id=run_id,

@@ -262,7 +262,8 @@ Line selection:
 - if the chosen individual-total coefficient is between `2.3` and `2.6`, use the inverse adjustment: subtract `0.5` for `IndTotal_B`, add `0.5` for `IndTotal_M`;
 - `Volleyball` period `0` is excluded because full-match volleyball totals do not use the same additive logic;
 - anomaly if the absolute delta `abs(Total - (IndTotal1 + IndTotal2))` is greater than the dynamic threshold based on `Total`: `<=5: 1.0`, `<=10: 1.5`, `<=20: 2.0`, `<=35: 2.0`, `<=60: 3.0`, `<=80: 4.0`, `<=120: 6.0`, `>120: 8.0`;
-- for `Rugby`, the critical threshold is increased by `1.0`.
+- for this rule, the critical threshold is increased by `0.5`;
+- for `Rugby`, the critical threshold is increased by another `1.0`.
 
 ### Stat Conflicts
 

@@ -46,6 +46,7 @@ BASKETBALL_PERIOD_EXPECTATIONS = {1: 4, 2: 4, 3: 4, 4: 4, 11: 2, 12: 2}
 BASKETBALL_HANDICAP_EVENTS = {"Fora_1", "Fora_2"}
 BASKETBALL_Q4_HANDICAP_PROBABILITY_DELTA_THRESHOLD = 0.25
 BASKETBALL_Q4_HANDICAP_PARAM_DELTA_THRESHOLD = 4.5
+TOTAL_DEVIATION_EXTRA_THRESHOLD = 0.5
 PERIOD_CONFLICT_ESPORTS_SUBSPORTS = {"Valorant", "CoD", "Dota2", "CS2"}
 PERIOD_CONFLICT_ESPORTS_MATCH_PROBABILITY_DELTA = 0.14
 PERIOD_CONFLICT_ESPORTS_PERIOD_PROBABILITY_DELTA = 0.15
@@ -487,6 +488,8 @@ def analyze_total_deviations_average(df):
                 abs_delta = abs(delta)
                 gi = info.get(item["MainGameId"], {})
                 threshold = period_deviation_threshold(item[total_col])
+                if threshold is not None:
+                    threshold += TOTAL_DEVIATION_EXTRA_THRESHOLD
                 if threshold is not None and gi.get("SportName") == "Rugby":
                     threshold += 1.0
                 if threshold is None or abs_delta <= threshold:

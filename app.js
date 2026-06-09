@@ -106,6 +106,11 @@ Object.assign(CHECK_HELP, {
     short: "Проверяет, согласован ли общий тотал с суммой индивидуальных тоталов команд.",
     long: "Для каждого периода и GameType выбирается линия с коэффициентом, ближайшим к 1.95. Если выбранный коэффициент любой из трех нужных линий ниже 1.5 или выше 2.6, проверка по этой группе не выполняется. Исключение: Tennis/Ace для общего Total допускает коэффициент 2.4-2.7 и корректирует общий тотал для сравнения: Total_B - 1, Total_M + 1. После этого общий Total сравнивается с IndTotal1 + IndTotal2. Для индивидуальных тоталов Param корректируется к центральному: при коэффициенте 1.5-1.65 для IndTotal_B прибавляется 0.5, для IndTotal_M отнимается 0.5; при коэффициенте 2.3-2.6 корректировка обратная: для IndTotal_B отнимается 0.5, для IndTotal_M прибавляется 0.5. Волейбол period 0 исключен. Аномалия появляется, если абсолютная разница между Total и ожидаемой суммой выше динамического порога: <=5: 1.0, <=10: 1.5, <=20: 2.0, <=35: 2.0, <=60: 3.0, <=80: 4.0, <=120: 6.0, >120: 8.0. Для этого правила к базовому порогу добавляется 0.5. Для Rugby критический порог дополнительно увеличивается еще на 1.0."
   },
+  poisson_total_consistency: {
+    title: "Poisson Total Consistency",
+    short: "Checks total consistency through normalized B/M probabilities and Poisson lambda.",
+    long: "For Football, Basketball, Hockey, Handball, WaterPolo and FootHall, the check runs for every period that has a complete same-source Total_B/Total_M, IndTotal_1_B/M and IndTotal_2_B/M set on .5 parameters. It normalizes over probability, keeps only central pairs with normalized over probability between 35% and 65%, converts it to Poisson lambda, and compares lambda_total with lambda_ind1 + lambda_ind2. The anomaly threshold is abs lambda delta > 1.0."
+  },
   stat_conflicts: {
     title: "Stat Conflicts",
     short: "Проверяет конфликт между фаворитом матча и фаворитом по статистическому рынку.",
@@ -487,6 +492,9 @@ function describeAnomaly(item) {
     const typeText = totalSide(payload) ? ` ${totalSide(payload)}` : "";
     return `Общий тотал${typeText} ${adjustedParamText(payload, "Total")} не сходится с расчетной суммой индивидуальных тоталов ${adjustedParamText(payload, "IndTotal1")} + ${adjustedParamText(payload, "IndTotal2")} = ${valueOrDash(payload.Expected)}. Дельта: ${valueOrDash(payload.Delta)}, |дельта|: ${valueOrDash(payload.AbsDelta ?? Math.abs(Number(payload.Delta)))}, критический порог: ${valueOrDash(payload.CriticalDelta)}.`;
   }
+  if (item.check_name === "poisson_total_consistency") {
+    return `Poisson total mismatch: lambda total ${valueOrDash(payload.TotalLambda)} vs individual sum ${valueOrDash(payload.ExpectedLambda)}. Delta lambda: ${valueOrDash(payload.LambdaDelta)}, threshold: ${valueOrDash(payload.CriticalLambdaDelta)}.`;
+  }
   if (item.check_name === "period_deviations_average") {
     const periods = String(payload.Periods || "1+2").split("+").filter(Boolean);
     const periodValues = periods.map(period => valueOrDash(payload[`P${period}`])).join(" + ");
@@ -798,6 +806,25 @@ function summaryDetails(item) {
         label: "Ключ",
         value: `Expected ${valueOrDash(payload.Expected)}`,
         sub: `Δ ${valueOrDash(payload.Delta)} · |Δ| ${valueOrDash(payload.AbsDelta ?? Math.abs(Number(payload.Delta)))} · crit ${valueOrDash(payload.CriticalDelta)}`,
+      },
+    ];
+  }
+  if (item.check_name === "poisson_total_consistency") {
+    return [
+      {
+        label: `Period ${valueOrDash(payload.Period)} · Total B`,
+        value: `${valueOrDash(payload.TotalParam)} → λ ${valueOrDash(payload.TotalLambda)}`,
+        sub: `B ${compactCoef(payload.TotalCoefB, payload.TotalProbabilityOver, payload.Source)} / M ${compactCoef(payload.TotalCoefM, payload.TotalProbabilityUnder)}`,
+      },
+      {
+        label: "Ind λ sum",
+        value: `${valueOrDash(payload.IndTotal1Lambda)} + ${valueOrDash(payload.IndTotal2Lambda)} = ${valueOrDash(payload.ExpectedLambda)}`,
+        sub: `${valueOrDash(payload.IndTotal1Param)} / ${valueOrDash(payload.IndTotal2Param)}`,
+      },
+      {
+        label: "Key",
+        value: `Δλ ${valueOrDash(payload.LambdaDelta)}`,
+        sub: `|Δλ| ${valueOrDash(payload.AbsLambdaDelta)} · crit ${valueOrDash(payload.CriticalLambdaDelta)}`,
       },
     ];
   }

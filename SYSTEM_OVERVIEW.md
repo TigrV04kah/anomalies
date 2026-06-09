@@ -245,6 +245,14 @@ Internal name:
 total_deviations_average
 ```
 
+Production status:
+
+```text
+legacy / inactive
+```
+
+This rule is kept in the codebase and UI descriptions for historical anomalies and possible rollback, but it is not included in the active production `CHECKS` set. `Poisson Total Consistency` is the active replacement.
+
 Purpose:
 
 Checks that a total is consistent with individual team totals:
@@ -264,6 +272,55 @@ Line selection:
 - anomaly if the absolute delta `abs(Total - (IndTotal1 + IndTotal2))` is greater than the dynamic threshold based on `Total`: `<=5: 1.0`, `<=10: 1.5`, `<=20: 2.0`, `<=35: 2.0`, `<=60: 3.0`, `<=80: 4.0`, `<=120: 6.0`, `>120: 8.0`;
 - for this rule, the critical threshold is increased by `0.5`;
 - for `Rugby`, the critical threshold is increased by another `1.0`.
+
+### Poisson Total Consistency
+
+Internal name:
+
+```text
+poisson_total_consistency
+```
+
+Purpose:
+
+Checks whether the total is consistent with individual totals after converting normalized over probabilities into Poisson lambda values:
+
+```text
+lambda_total ~= lambda_ind_total_1 + lambda_ind_total_2
+```
+
+Scope:
+
+- enabled only for `Football`, `Basketball`, `Hockey`, `Handball`, `WaterPolo`, and `FootHall`;
+- every available `Period` is checked separately when the full market set exists;
+- only half-point parameters (`.5`), because integer and quarter Asian totals need separate push/half-push handling;
+- all compared lines must come from the same source/bookmaker.
+
+Line selection:
+
+- build same-parameter pairs for `Total_B / Total_M`, `IndTotal_1_B / IndTotal_1_M`, and `IndTotal_2_B / IndTotal_2_M` inside each `MainGameId + GameType + Period + source` group;
+- normalize over probability for each pair:
+
+```text
+p_over = (1 / coef_B) / ((1 / coef_B) + (1 / coef_M))
+```
+
+- keep only central pairs where normalized `p_over` is between `0.35` and `0.65`;
+- solve for `lambda` so that:
+
+```text
+P(Poisson(lambda) > Param) = p_over
+```
+
+- if multiple same-source pairs exist, use the pair whose normalized `p_over` is closest to `0.5`.
+
+Anomaly:
+
+- `abs(lambda_total - (lambda_ind_total_1 + lambda_ind_total_2)) > 1.0`.
+
+Excluded for now:
+
+- `Tennis`, `TableTennis`, `Volleyball`, `Rugby`, and other sports. Tests showed that their scoring structure does not fit this simple Poisson total model reliably.
 
 ### Stat Conflicts
 

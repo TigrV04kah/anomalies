@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 CHECK_TITLES = {
     "period_deviations_average": "Main = Period (average)",
     "total_deviations_average": "Total = Ind total 1 + Ind Total 2 (average)",
+    "poisson_total_consistency": "Poisson Total Consistency",
     "stat_conflicts": "Stat Conflicts",
     "individual_total_favorite_consistency": "Individual Total Favorite Consistency",
     "mathrobot_individual_total_favorite_consistency": "MathRobot Individual Total Favorite Consistency",
@@ -47,6 +48,14 @@ def stable_key(check_name, row):
             str(row.get("GameType", "")),
             str(row.get("Period", "")),
             str(row.get("Type", "")),
+        ])
+    if check_name == "poisson_total_consistency":
+        return "|".join([
+            check_name,
+            str(row.get("MainGameId", "")),
+            str(row.get("GameType", "")),
+            str(row.get("Period", "")),
+            str(row.get("SourceKey", "")),
         ])
     if check_name == "stat_conflicts":
         return "|".join([

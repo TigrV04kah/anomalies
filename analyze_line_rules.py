@@ -1,5 +1,6 @@
 import csv
 import json
+import math
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
@@ -47,6 +48,18 @@ BASKETBALL_HANDICAP_EVENTS = {"Fora_1", "Fora_2"}
 BASKETBALL_Q4_HANDICAP_PROBABILITY_DELTA_THRESHOLD = 0.25
 BASKETBALL_Q4_HANDICAP_PARAM_DELTA_THRESHOLD = 4.5
 TOTAL_DEVIATION_EXTRA_THRESHOLD = 0.5
+POISSON_TOTAL_SPORTS = {"Basketball", "Football", "FootHall", "Handball", "Hockey", "WaterPolo"}
+POISSON_TOTAL_LAMBDA_DELTA_THRESHOLD = 1.0
+POISSON_TOTAL_CENTER_PROBABILITY_MIN = 0.35
+POISSON_TOTAL_CENTER_PROBABILITY_MAX = 0.65
+POISSON_TOTAL_MARKETS = {
+    "Total_B": ("Total", "B"),
+    "Total_M": ("Total", "M"),
+    "IndTotal_1_B": ("IndTotal1", "B"),
+    "IndTotal_1_M": ("IndTotal1", "M"),
+    "IndTotal_2_B": ("IndTotal2", "B"),
+    "IndTotal_2_M": ("IndTotal2", "M"),
+}
 PERIOD_CONFLICT_ESPORTS_SUBSPORTS = {"Valorant", "CoD", "Dota2", "CS2"}
 PERIOD_CONFLICT_ESPORTS_MATCH_PROBABILITY_DELTA = 0.14
 PERIOD_CONFLICT_ESPORTS_PERIOD_PROBABILITY_DELTA = 0.15
@@ -541,6 +554,219 @@ def analyze_total_deviations_average(df):
                     "CriticalDelta": threshold,
                 })
     return sorted(rows, key=lambda row: abs(float(row["Delta"])), reverse=True)
+
+
+def is_half_point_param(value):
+    if pd.isna(value):
+        return False
+    doubled = round(float(value) * 2)
+    return abs(float(value) * 2 - doubled) < 1e-9 and doubled % 2 == 1
+
+
+def poisson_cdf(k, lam):
+    if lam < 0:
+        return None
+    if k < 0:
+        return 0.0
+    term = math.exp(-lam)
+    total = term
+    for i in range(1, int(k) + 1):
+        term *= lam / i
+        total += term
+    return min(max(total, 0.0), 1.0)
+
+
+def poisson_over_probability(param, lam):
+    cdf = poisson_cdf(math.floor(float(param)), lam)
+    if cdf is None:
+        return None
+    return min(max(1.0 - cdf, 0.0), 1.0)
+
+
+def lambda_from_over_probability(param, probability):
+    if not (0 < probability < 1):
+        return None
+    low = 0.0
+    high = max(1.0, float(param) + 10.0)
+    while poisson_over_probability(param, high) < probability:
+        high *= 2.0
+        if high > 10000:
+            return None
+    for _ in range(70):
+        mid = (low + high) / 2.0
+        if poisson_over_probability(param, mid) < probability:
+            low = mid
+        else:
+            high = mid
+    return (low + high) / 2.0
+
+
+def normalized_over_probability(over_coef, under_coef):
+    if pd.isna(over_coef) or pd.isna(under_coef) or over_coef <= 1 or under_coef <= 1:
+        return None
+    over_raw = 1.0 / float(over_coef)
+    under_raw = 1.0 / float(under_coef)
+    total = over_raw + under_raw
+    if total <= 0:
+        return None
+    return over_raw / total
+
+
+def analyze_poisson_total_consistency(df):
+    if df.empty:
+        return []
+    required = {"MainGameId", "GameId", "GameType", "Period", "SportName", "EventType", "Param", "Coef"}
+    if not required.issubset(df.columns):
+        return []
+
+    filtered = df[
+        (df["SportName"].isin(POISSON_TOTAL_SPORTS)) &
+        (df["EventType"].isin(POISSON_TOTAL_MARKETS)) &
+        (df["Coef"] > 1) &
+        (df["Param"].notna())
+    ].copy()
+    if filtered.empty:
+        return []
+
+    filtered = filtered[filtered["Param"].apply(is_half_point_param)].copy()
+    if filtered.empty:
+        return []
+    filtered["BaseMarket"] = filtered["EventType"].map(lambda event_type: POISSON_TOTAL_MARKETS[event_type][0])
+    filtered["Side"] = filtered["EventType"].map(lambda event_type: POISSON_TOTAL_MARKETS[event_type][1])
+    if "Contora" in filtered.columns:
+        filtered["SourceKey"] = filtered["Contora"]
+    else:
+        filtered["SourceKey"] = None
+    if "ContoraName" in filtered.columns:
+        filtered["SourceKey"] = filtered["SourceKey"].where(filtered["SourceKey"].notna(), filtered["ContoraName"])
+    filtered = filtered[filtered["SourceKey"].notna()].copy()
+    if filtered.empty:
+        return []
+
+    pair_rows = []
+    group_columns = ["MainGameId", "GameType", "Period", "SourceKey", "BaseMarket", "Param"]
+    for _, group in filtered.groupby(group_columns, dropna=False):
+        over_rows = group[group["Side"] == "B"].sort_values(["Coef", "GameId"], kind="mergesort")
+        under_rows = group[group["Side"] == "M"].sort_values(["Coef", "GameId"], kind="mergesort")
+        if over_rows.empty or under_rows.empty:
+            continue
+        over = over_rows.iloc[0]
+        under = under_rows.iloc[0]
+        probability = normalized_over_probability(over.get("Coef"), under.get("Coef"))
+        if probability is None:
+            continue
+        if not (
+            POISSON_TOTAL_CENTER_PROBABILITY_MIN <= probability <= POISSON_TOTAL_CENTER_PROBABILITY_MAX
+        ):
+            continue
+        lam = lambda_from_over_probability(over.get("Param"), probability)
+        if lam is None:
+            continue
+        pair_rows.append({
+            "MainGameId": over.get("MainGameId"),
+            "GameType": over.get("GameType"),
+            "Period": over.get("Period"),
+            "SourceKey": over.get("SourceKey"),
+            "BaseMarket": over.get("BaseMarket"),
+            "Sport": over.get("SportName"),
+            "Champ": over.get("Champ"),
+            "Opp1": over.get("Opp1"),
+            "Opp2": over.get("Opp2"),
+            "Start": over.get("Start"),
+            "Param": float(over.get("Param")),
+            "CoefB": float(over.get("Coef")),
+            "CoefM": float(under.get("Coef")),
+            "ProbabilityOver": probability,
+            "ProbabilityUnder": 1.0 - probability,
+            "Lambda": lam,
+            "Source": source_label(over),
+            "GameIdB": over.get("GameId"),
+            "GameIdM": under.get("GameId"),
+        })
+
+    if not pair_rows:
+        return []
+
+    pairs = pd.DataFrame(pair_rows)
+    pairs["CenterDistance"] = (pairs["ProbabilityOver"] - 0.5).abs()
+    centers = pairs.sort_values(
+        ["MainGameId", "GameType", "Period", "SourceKey", "BaseMarket", "CenterDistance", "CoefB", "Param"],
+        kind="mergesort",
+    ).drop_duplicates(
+        ["MainGameId", "GameType", "Period", "SourceKey", "BaseMarket"],
+        keep="first",
+    )
+    pivot = centers.pivot_table(
+        index=["MainGameId", "GameType", "Period", "SourceKey"],
+        columns="BaseMarket",
+        values=["Param", "CoefB", "CoefM", "ProbabilityOver", "ProbabilityUnder", "Lambda", "GameIdB", "GameIdM"],
+        aggfunc="first",
+    )
+    pivot.columns = [f"{market}_{field}" for field, market in pivot.columns]
+    pivot = pivot.reset_index()
+    required_columns = ["Total_Lambda", "IndTotal1_Lambda", "IndTotal2_Lambda"]
+    pivot = pivot.dropna(subset=required_columns).copy()
+    if pivot.empty:
+        return []
+
+    info = centers.drop_duplicates(["MainGameId", "GameType", "Period", "SourceKey"])[[
+        "MainGameId", "GameType", "Period", "SourceKey", "Sport", "Champ", "Opp1", "Opp2", "Start", "Source",
+    ]]
+    pivot = pivot.merge(info, on=["MainGameId", "GameType", "Period", "SourceKey"], how="left")
+    rows = []
+    for _, item in pivot.iterrows():
+        expected_lambda = item["IndTotal1_Lambda"] + item["IndTotal2_Lambda"]
+        delta = item["Total_Lambda"] - expected_lambda
+        abs_delta = abs(delta)
+        if abs_delta <= POISSON_TOTAL_LAMBDA_DELTA_THRESHOLD:
+            continue
+        rows.append({
+            "Status": "DIFF",
+            "MainGameId": item["MainGameId"],
+            "GameId": item.get("Total_GameIdB"),
+            "GameType": item["GameType"],
+            "Sport": item.get("Sport"),
+            "Champ": item.get("Champ"),
+            "Opp1": item.get("Opp1"),
+            "Opp2": item.get("Opp2"),
+            "Start": item.get("Start"),
+            "Period": item["Period"],
+            "Type": "B",
+            "EventType": "Total_B",
+            "EventTypes": "Total_B / Total_M / IndTotal_1_B / IndTotal_1_M / IndTotal_2_B / IndTotal_2_M",
+            "SourceKey": item.get("SourceKey"),
+            "Source": item.get("Source"),
+            "TotalGameId": item.get("Total_GameIdB"),
+            "TotalUnderGameId": item.get("Total_GameIdM"),
+            "TotalParam": rounded_number(item.get("Total_Param")),
+            "TotalCoefB": rounded_number(item.get("Total_CoefB")),
+            "TotalCoefM": rounded_number(item.get("Total_CoefM")),
+            "TotalProbabilityOver": rounded_number(item.get("Total_ProbabilityOver"), 6),
+            "TotalProbabilityUnder": rounded_number(item.get("Total_ProbabilityUnder"), 6),
+            "TotalLambda": rounded_number(item.get("Total_Lambda"), 4),
+            "IndTotal1GameId": item.get("IndTotal1_GameIdB"),
+            "IndTotal1UnderGameId": item.get("IndTotal1_GameIdM"),
+            "IndTotal1Param": rounded_number(item.get("IndTotal1_Param")),
+            "IndTotal1CoefB": rounded_number(item.get("IndTotal1_CoefB")),
+            "IndTotal1CoefM": rounded_number(item.get("IndTotal1_CoefM")),
+            "IndTotal1ProbabilityOver": rounded_number(item.get("IndTotal1_ProbabilityOver"), 6),
+            "IndTotal1ProbabilityUnder": rounded_number(item.get("IndTotal1_ProbabilityUnder"), 6),
+            "IndTotal1Lambda": rounded_number(item.get("IndTotal1_Lambda"), 4),
+            "IndTotal2GameId": item.get("IndTotal2_GameIdB"),
+            "IndTotal2UnderGameId": item.get("IndTotal2_GameIdM"),
+            "IndTotal2Param": rounded_number(item.get("IndTotal2_Param")),
+            "IndTotal2CoefB": rounded_number(item.get("IndTotal2_CoefB")),
+            "IndTotal2CoefM": rounded_number(item.get("IndTotal2_CoefM")),
+            "IndTotal2ProbabilityOver": rounded_number(item.get("IndTotal2_ProbabilityOver"), 6),
+            "IndTotal2ProbabilityUnder": rounded_number(item.get("IndTotal2_ProbabilityUnder"), 6),
+            "IndTotal2Lambda": rounded_number(item.get("IndTotal2_Lambda"), 4),
+            "ExpectedLambda": round(expected_lambda, 4),
+            "LambdaDelta": round(delta, 4),
+            "AbsLambdaDelta": round(abs_delta, 4),
+            "CriticalLambdaDelta": POISSON_TOTAL_LAMBDA_DELTA_THRESHOLD,
+            "ParamDelta": rounded_number(item.get("Total_Param") - item.get("IndTotal1_Param") - item.get("IndTotal2_Param"), 4),
+        })
+    return sorted(rows, key=lambda row: float(row["AbsLambdaDelta"]), reverse=True)
 
 
 def get_match_favorite(p1, p2, threshold=0.10, max_coef=2.2):
@@ -1712,7 +1938,7 @@ def analyze_basketball_q4_handicap_shift(df):
 
 CHECKS = {
     "period_deviations_average": analyze_period_deviations_average,
-    "total_deviations_average": analyze_total_deviations_average,
+    "poisson_total_consistency": analyze_poisson_total_consistency,
     "stat_conflicts": analyze_stat_conflicts,
     "individual_total_favorite_consistency": analyze_individual_total_favorite_consistency,
     "mathrobot_individual_total_favorite_consistency": analyze_mathrobot_individual_total_favorite_consistency,

@@ -505,6 +505,8 @@ def analyze_total_deviations_average(df):
                     "Start": gi.get("Start"),
                     "Period": period,
                     "Type": side,
+                    "EventType": f"Total_{side}",
+                    "EventTypes": f"Total_{side} / IndTotal_1_{side} / IndTotal_2_{side}",
                     "GameId": total_line.get("GameId") if total_line is not None else None,
                     "TotalGameId": total_line.get("GameId") if total_line is not None else None,
                     "Total": rounded_number(total_line.get("Param") if total_line is not None else None),

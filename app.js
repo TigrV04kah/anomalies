@@ -220,6 +220,12 @@ function adjustedParamText(payload, prefix) {
   return `${valueOrDash(original)} ${sign} ${valueOrDash(Math.abs(adjustment))} = ${valueOrDash(adjusted)}`;
 }
 
+function totalSide(payload) {
+  if (hasValue(payload.Type)) return String(payload.Type);
+  const match = String(payload.EventType || "").match(/_(B|M)$/);
+  return match ? match[1] : "";
+}
+
 function matchLineForSide(payload, side) {
   if (side !== "p1" && side !== "p2") return "-";
   const suffix = side === "p1" ? "P1" : "P2";
@@ -478,7 +484,8 @@ function describeAnomaly(item) {
     return `В матче фаворит ${valueOrDash(payload.MatchFavorite)}, но в периоде ${valueOrDash(payload.Period)} фаворит ${valueOrDash(payload.PeriodFavorite)}. GameType: ${valueOrDash(payload.GameType)}.`;
   }
   if (item.check_name === "total_deviations_average") {
-    return `Общий тотал ${adjustedParamText(payload, "Total")} не сходится с расчетной суммой индивидуальных тоталов ${adjustedParamText(payload, "IndTotal1")} + ${adjustedParamText(payload, "IndTotal2")} = ${valueOrDash(payload.Expected)}. Дельта: ${valueOrDash(payload.Delta)}, |дельта|: ${valueOrDash(payload.AbsDelta ?? Math.abs(Number(payload.Delta)))}, критический порог: ${valueOrDash(payload.CriticalDelta)}.`;
+    const typeText = totalSide(payload) ? ` ${totalSide(payload)}` : "";
+    return `Общий тотал${typeText} ${adjustedParamText(payload, "Total")} не сходится с расчетной суммой индивидуальных тоталов ${adjustedParamText(payload, "IndTotal1")} + ${adjustedParamText(payload, "IndTotal2")} = ${valueOrDash(payload.Expected)}. Дельта: ${valueOrDash(payload.Delta)}, |дельта|: ${valueOrDash(payload.AbsDelta ?? Math.abs(Number(payload.Delta)))}, критический порог: ${valueOrDash(payload.CriticalDelta)}.`;
   }
   if (item.check_name === "period_deviations_average") {
     const periods = String(payload.Periods || "1+2").split("+").filter(Boolean);
@@ -569,8 +576,27 @@ function idRowsFromPayload(payload) {
     rows.push([scope, gameType || "-", eventType || "-", period || "-", gameId]);
   };
 
+  const hasDetailedGameIds = [
+    payload.TotalGameId,
+    payload.IndTotal1GameId,
+    payload.IndTotal2GameId,
+    payload.MatchGameId,
+    payload.PeriodGameId,
+    payload.StatGameId,
+    payload.FullGameId,
+    payload.SourceGameId,
+    payload.TargetGameId,
+    payload.Q1GameId,
+    payload.Q4CentralGameId,
+    payload.Q4SameParamGameId,
+    payload.FavoriteGameId,
+    payload.OutsiderGameId,
+  ].some(hasValue);
+
   add("MainGameID", payload.GameType, payload.EventType || payload.Type || payload.StatType, "-", payload.MainGameId);
-  add("GameID", payload.GameType, payload.EventType || payload.Type || payload.StatType, payload.Period, payload.GameId);
+  if (!hasDetailedGameIds) {
+    add("GameID", payload.GameType, payload.EventType || payload.Type || payload.StatType, payload.Period, payload.GameId);
+  }
   add("Match", payload.GameType || "Main", "p1/p2", 0, payload.MatchGameId);
   add("Period", payload.GameType || "Main", "p1/p2", payload.Period, payload.PeriodGameId);
   add("Stat", payload.GameType || payload.StatType, payload.StatType || "p1/p2", payload.Period, payload.StatGameId);
@@ -592,7 +618,26 @@ function idRowsFromPayload(payload) {
       add(`Period ${match[1]}`, payload.GameType, payload.EventType, match[1], value);
     }
   });
+  const handledGameIdKeys = new Set([
+    "GameId",
+    "MainGameId",
+    "TotalGameId",
+    "IndTotal1GameId",
+    "IndTotal2GameId",
+    "MatchGameId",
+    "PeriodGameId",
+    "StatGameId",
+    "FullGameId",
+    "SourceGameId",
+    "TargetGameId",
+    "Q1GameId",
+    "Q4CentralGameId",
+    "Q4SameParamGameId",
+    "FavoriteGameId",
+    "OutsiderGameId",
+  ]);
   Object.entries(payload).forEach(([key, value]) => {
+    if (handledGameIdKeys.has(key)) return;
     if (!key.endsWith("GameId") || key === "MainGameId" || key === "GameId") return;
     const scope = key.replace(/GameId$/, "").replace(/([a-z])([A-Z])/g, "$1 $2").trim();
     add(scope || "GameID", payload.GameType, payload.EventType || payload.Type || payload.StatType, payload.Period, value);
@@ -629,6 +674,23 @@ function gameTypeText(payload) {
   return gameTypes.length ? gameTypes.join(" / ") : "-";
 }
 
+function eventTypeText(payload, item) {
+  if (hasValue(payload.EventTypes)) return payload.EventTypes;
+  const eventTypes = uniqueText([
+    payload.EventType,
+    payload.FavoriteEventType,
+    payload.OutsiderEventType,
+    payload.SourceCenterEventType,
+    payload.TargetCenterEventType,
+    payload.StatType,
+    payload.Type ? `Total_${payload.Type}` : null,
+  ]);
+  if (item.check_name === "total_deviations_average" && payload.Type) {
+    return [`Total_${payload.Type}`, `IndTotal_1_${payload.Type}`, `IndTotal_2_${payload.Type}`].join(" / ");
+  }
+  return eventTypes.length ? eventTypes.join(" / ") : "-";
+}
+
 function gameIdText(payload) {
   const rows = idRowsFromPayload(payload).filter(row => row[0] !== "MainGameID");
   if (!rows.length) return "-";
@@ -648,13 +710,23 @@ function gameIdText(payload) {
 
 function renderCardMeta(container, item) {
   const payload = item.payload_json || {};
+  const side = totalSide(payload);
   const meta = [
     ["Period", checkedPeriodText(payload, item)],
     ["MainGameID", payload.MainGameId || "-"],
     ["GameType", gameTypeText(payload)],
+  ];
+  if (side) {
+    meta.push(["Type", side]);
+  }
+  const eventType = eventTypeText(payload, item);
+  if (item.check_name !== "total_deviations_average" && eventType !== "-") {
+    meta.push(["EventType", eventType]);
+  }
+  meta.push(
     ["GameID", gameIdText(payload)],
     ["Occurrences", item.occurrence_count || 0],
-  ];
+  );
   container.textContent = "";
   for (const [label, value] of meta) {
     const chip = document.createElement("span");
@@ -710,9 +782,10 @@ function setSummary(container, details) {
 function summaryDetails(item) {
   const payload = item.payload_json || {};
   if (item.check_name === "total_deviations_average") {
+    const side = totalSide(payload);
     return [
       {
-        label: payload.Period ? `Период ${payload.Period}` : "Период 0",
+        label: `${payload.Period ? `Период ${payload.Period}` : "Период 0"}${side ? ` · ${side}` : ""}`,
         value: `Total ${valueOrDash(payload.TotalOriginal ?? payload.Total)}`,
         sub: compactCoef(payload.TotalCoef, payload.TotalProbability, payload.TotalSource),
       },

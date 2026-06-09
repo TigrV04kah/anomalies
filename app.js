@@ -604,6 +604,10 @@ function hasValue(value) {
   return value !== null && value !== undefined && value !== "";
 }
 
+function firstPresent(...values) {
+  return values.find(hasValue);
+}
+
 function uniqueText(values) {
   return [...new Set(values.filter(hasValue).map(value => String(value)))];
 }
@@ -802,6 +806,20 @@ function summaryDetails(item) {
     ];
   }
   if (item.check_name === "basketball_players") {
+    const hasLeftRight = hasValue(payload.LeftParam) || hasValue(payload.RightParam);
+    const lineValueText = hasLeftRight
+      ? `${valueOrDash(payload.LeftParam)} → ${valueOrDash(payload.RightParam)}`
+      : valueOrDash(firstPresent(payload.CenterParam, payload.PeriodParam, payload.FullParam));
+    const lineCoefText = hasLeftRight
+      ? [
+          compactCoef(payload.LeftCoef, payload.LeftProbability, payload.LeftSource),
+          compactCoef(payload.RightCoef, payload.RightProbability, payload.RightSource)
+        ].filter(Boolean).join(" → ")
+      : compactCoef(
+          firstPresent(payload.CenterCoef, payload.PeriodCoef, payload.FullCoef),
+          firstPresent(payload.CenterProbability, payload.PeriodProbability, payload.FullProbability),
+          firstPresent(payload.CenterSource, payload.PeriodSource, payload.FullSource)
+        );
     return [
       {
         label: "Player",
@@ -810,12 +828,12 @@ function summaryDetails(item) {
       },
       {
         label: "Line",
-        value: valueOrDash(payload.CenterParam ?? payload.PeriodParam ?? payload.LeftParam),
-        sub: compactCoef(payload.CenterCoef ?? payload.PeriodCoef ?? payload.LeftCoef, payload.CenterProbability ?? payload.PeriodProbability ?? payload.LeftProbability),
+        value: lineValueText,
+        sub: lineCoefText,
       },
       {
         label: "Ключ",
-        value: valueOrDash(payload.Delta ?? payload.ParamDiff),
+        value: valueOrDash(firstPresent(payload.Delta, payload.ParamDiff, payload.ExpectedParam)),
         sub: valueOrDash(payload.Rule),
       },
     ];

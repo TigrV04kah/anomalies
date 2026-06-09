@@ -678,6 +678,34 @@ main {
 
 .card-meta {
   margin-top: var(--lm-space-5);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.meta-chip {
+  display: inline-flex;
+  gap: 5px;
+  align-items: baseline;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--lm-line);
+  border-radius: 6px;
+  background: var(--lm-surface-sunken);
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.meta-chip b {
+  flex: 0 0 auto;
+  color: var(--text);
+  font-weight: var(--lm-weight-medium);
+}
+
+.meta-chip span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .review {

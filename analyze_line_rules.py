@@ -504,6 +504,8 @@ def analyze_total_deviations_average(df):
                     "Start": gi.get("Start"),
                     "Period": period,
                     "Type": side,
+                    "GameId": total_line.get("GameId") if total_line is not None else None,
+                    "TotalGameId": total_line.get("GameId") if total_line is not None else None,
                     "Total": rounded_number(total_line.get("Param") if total_line is not None else None),
                     "TotalAdjusted": round(item[total_col], 4),
                     "TotalOriginal": rounded_number(total_line.get("Param") if total_line is not None else None),
@@ -513,6 +515,7 @@ def analyze_total_deviations_average(df):
                     "TotalSource": source_label(total_line) if total_line is not None else None,
                     "IndTotal1": rounded_number(ind1_line.get("Param") if ind1_line is not None else None),
                     "IndTotal1Adjusted": round(item[ind1_col], 4),
+                    "IndTotal1GameId": ind1_line.get("GameId") if ind1_line is not None else None,
                     "IndTotal1Coef": rounded_number(ind1_line.get("Coef") if ind1_line is not None else None),
                     "IndTotal1Probability": rounded_probability(ind1_line.get("Coef") if ind1_line is not None else None),
                     "IndTotal1Source": source_label(ind1_line) if ind1_line is not None else None,
@@ -520,6 +523,7 @@ def analyze_total_deviations_average(df):
                     "IndTotal1Adjustment": rounded_number(ind1_line.get("ParamAdjustment") if ind1_line is not None else None),
                     "IndTotal2": rounded_number(ind2_line.get("Param") if ind2_line is not None else None),
                     "IndTotal2Adjusted": round(item[ind2_col], 4),
+                    "IndTotal2GameId": ind2_line.get("GameId") if ind2_line is not None else None,
                     "IndTotal2Coef": rounded_number(ind2_line.get("Coef") if ind2_line is not None else None),
                     "IndTotal2Probability": rounded_probability(ind2_line.get("Coef") if ind2_line is not None else None),
                     "IndTotal2Source": source_label(ind2_line) if ind2_line is not None else None,
@@ -602,6 +606,10 @@ def analyze_stat_conflicts(df):
         (row["MainGameId"], row["EventType"]): source_label(row)
         for _, row in win_rows.sort_values(["MainGameId", "EventType", "Coef"]).drop_duplicates(["MainGameId", "EventType"]).iterrows()
     }
+    win_game_id = {
+        row["MainGameId"]: row.get("GameId")
+        for _, row in win_rows.sort_values(["MainGameId", "GameId"], na_position="last").drop_duplicates("MainGameId").iterrows()
+    }
 
     stats = df[
         (df["EventType"].isin(["p1", "p2"])) &
@@ -642,12 +650,16 @@ def analyze_stat_conflicts(df):
         rows.append({
             "Status": "DIFF",
             "GameId": game_id,
+            "StatGameId": game_id,
+            "MatchGameId": win_game_id.get(first.get("MainGameId")),
             "MainGameId": first.get("MainGameId"),
+            "GameType": stat_type,
             "Sport": first.get("SportName"),
             "Champ": first.get("Champ"),
             "Opp1": first.get("Opp1"),
             "Opp2": first.get("Opp2"),
             "Start": first.get("Start"),
+            "Period": 0,
             "StatType": stat_type,
             "MatchCoefP1": match_p1,
             "MatchProbabilityP1": rounded_probability(match_p1),
@@ -1144,6 +1156,12 @@ def analyze_period_conflicts(df):
         aggfunc="first",
     ).reset_index().rename(columns={"p1": "p1_source", "p2": "p2_source"})
     pivot = pivot.merge(source_pivot, on=["MainGameId", "Period"], how="left")
+    gameid_pivot = wins.pivot_table(
+        index=["MainGameId", "Period"],
+        values="GameId",
+        aggfunc="first",
+    ).reset_index()
+    pivot = pivot.merge(gameid_pivot, on=["MainGameId", "Period"], how="left")
     if "p1" not in pivot.columns or "p2" not in pivot.columns:
         return []
 
@@ -1158,7 +1176,7 @@ def analyze_period_conflicts(df):
         lambda row: pd.Series(favorite_by_zone(row["p1"], row["p2"])), axis=1
     )
     merged = periods.merge(
-        match[["MainGameId", "match_fav", "p1", "p2", "p1_source", "p2_source", "match_p1_zone", "match_p2_zone"]],
+        match[["MainGameId", "GameId", "match_fav", "p1", "p2", "p1_source", "p2_source", "match_p1_zone", "match_p2_zone"]],
         on="MainGameId",
         how="inner",
         suffixes=("_period", "_match"),
@@ -1181,6 +1199,9 @@ def analyze_period_conflicts(df):
         rows.append({
             "Status": "DIFF",
             "MainGameId": item["MainGameId"],
+            "GameId": item.get("GameId_period"),
+            "MatchGameId": item.get("GameId_match"),
+            "PeriodGameId": item.get("GameId_period"),
             "GameType": "Main",
             "Sport": gi.get("SportName"),
             "SubSport": normalize_subsport(gi),

@@ -571,6 +571,12 @@ function idRowsFromPayload(payload) {
 
   add("MainGameID", payload.GameType, payload.EventType || payload.Type || payload.StatType, "-", payload.MainGameId);
   add("GameID", payload.GameType, payload.EventType || payload.Type || payload.StatType, payload.Period, payload.GameId);
+  add("Match", payload.GameType || "Main", "p1/p2", 0, payload.MatchGameId);
+  add("Period", payload.GameType || "Main", "p1/p2", payload.Period, payload.PeriodGameId);
+  add("Stat", payload.GameType || payload.StatType, payload.StatType || "p1/p2", payload.Period, payload.StatGameId);
+  add("Total", payload.GameType, `Total_${payload.Type || ""}`.replace(/_$/, ""), payload.Period, payload.TotalGameId);
+  add("Ind total 1", payload.GameType, `IndTotal_1_${payload.Type || ""}`.replace(/_$/, ""), payload.Period, payload.IndTotal1GameId);
+  add("Ind total 2", payload.GameType, `IndTotal_2_${payload.Type || ""}`.replace(/_$/, ""), payload.Period, payload.IndTotal2GameId);
   add("Full game", payload.GameType, payload.EventType, 0, payload.FullGameId);
   add("Source", payload.SourceGameType, payload.SourceCenterEventType || payload.EventType, "-", payload.SourceGameId);
   add("Target", payload.TargetGameType, payload.TargetCenterEventType || payload.EventType, "-", payload.TargetGameId);
@@ -586,7 +592,76 @@ function idRowsFromPayload(payload) {
       add(`Period ${match[1]}`, payload.GameType, payload.EventType, match[1], value);
     }
   });
+  Object.entries(payload).forEach(([key, value]) => {
+    if (!key.endsWith("GameId") || key === "MainGameId" || key === "GameId") return;
+    const scope = key.replace(/GameId$/, "").replace(/([a-z])([A-Z])/g, "$1 $2").trim();
+    add(scope || "GameID", payload.GameType, payload.EventType || payload.Type || payload.StatType, payload.Period, value);
+  });
   return rows;
+}
+
+function hasValue(value) {
+  return value !== null && value !== undefined && value !== "";
+}
+
+function uniqueText(values) {
+  return [...new Set(values.filter(hasValue).map(value => String(value)))];
+}
+
+function checkedPeriodText(payload, item) {
+  if (hasValue(payload.Period)) return String(payload.Period);
+  if (hasValue(payload.Periods)) return `0 vs ${payload.Periods}`;
+  if (item.check_name === "basketball_q4_handicap_shift") return "1 vs 4";
+  if (["stat_conflicts", "football_stat_relations", "tennis_special_what_earlear"].includes(item.check_name)) return "0";
+  return "-";
+}
+
+function gameTypeText(payload) {
+  const gameTypes = uniqueText([
+    payload.GameType,
+    payload.SourceGameType,
+    payload.TargetGameType,
+  ]);
+  return gameTypes.length ? gameTypes.join(" / ") : "-";
+}
+
+function gameIdText(payload) {
+  const rows = idRowsFromPayload(payload).filter(row => row[0] !== "MainGameID");
+  if (!rows.length) return "-";
+  return rows
+    .map(([scope, , , period, gameId]) => {
+      const periodText = hasValue(period) && period !== "-" ? ` P${period}` : "";
+      if (scope === "GameID") {
+        return `${periodText.trim() || "GameID"}: ${gameId}`;
+      }
+      if (/^Period \d+$/.test(scope)) {
+        return `${scope}: ${gameId}`;
+      }
+      return `${scope}${periodText}: ${gameId}`;
+    })
+    .join(" · ");
+}
+
+function renderCardMeta(container, item) {
+  const payload = item.payload_json || {};
+  const meta = [
+    ["Period", checkedPeriodText(payload, item)],
+    ["MainGameID", payload.MainGameId || "-"],
+    ["GameType", gameTypeText(payload)],
+    ["GameID", gameIdText(payload)],
+    ["Occurrences", item.occurrence_count || 0],
+  ];
+  container.textContent = "";
+  for (const [label, value] of meta) {
+    const chip = document.createElement("span");
+    chip.className = "meta-chip";
+    const labelNode = document.createElement("b");
+    labelNode.textContent = label;
+    const valueNode = document.createElement("span");
+    valueNode.textContent = valueOrDash(value);
+    chip.append(labelNode, valueNode);
+    container.appendChild(chip);
+  }
 }
 
 function appendIdentityTables(container, payload, item) {
@@ -1139,7 +1214,7 @@ function render() {
     description.textContent = describeAnomaly(item);
     node.querySelector(".anomaly-main").insertBefore(description, node.querySelector(".grid"));
     renderDetails(node.querySelector(".grid"), item);
-    node.querySelector(".card-meta").textContent = `MainGameId ${payload.MainGameId || payload.GameId || "-"} · GameType ${payload.GameType || "-"} · ${item.occurrence_count} раз`;
+    renderCardMeta(node.querySelector(".card-meta"), item);
 
     fillReview(form, item);
     applyReviewState(article, node, item);

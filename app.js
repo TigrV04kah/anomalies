@@ -104,7 +104,7 @@ Object.assign(CHECK_HELP, {
   total_deviations_average: {
     title: "Total = Ind total 1 + Ind Total 2 (average)",
     short: "Проверяет, согласован ли общий тотал с суммой индивидуальных тоталов команд.",
-    long: "Для каждого периода и GameType выбирается линия с коэффициентом, ближайшим к 1.95. Если выбранный коэффициент любой из трех нужных линий ниже 1.5 или выше 2.6, проверка по этой группе не выполняется. Исключение: Tennis/Ace для общего Total допускает коэффициент 2.4-2.7 и корректирует общий тотал для сравнения: Total_B - 1, Total_M + 1. После этого общий Total сравнивается с IndTotal1 + IndTotal2. Для индивидуальных тоталов Param корректируется к центральному: при коэффициенте 1.5-1.65 для IndTotal_B прибавляется 0.5, для IndTotal_M отнимается 0.5; при коэффициенте 2.3-2.6 корректировка обратная: для IndTotal_B отнимается 0.5, для IndTotal_M прибавляется 0.5. Волейбол period 0 исключен. Аномалия появляется, если Total больше ожидаемой суммы выше динамического порога: <=5: 1.0, <=10: 1.5, <=20: 2.0, <=35: 2.0, <=60: 3.0, <=80: 4.0, <=120: 6.0, >120: 8.0. Для Rugby критический порог дополнительно увеличивается на 1.0."
+    long: "Для каждого периода и GameType выбирается линия с коэффициентом, ближайшим к 1.95. Если выбранный коэффициент любой из трех нужных линий ниже 1.5 или выше 2.6, проверка по этой группе не выполняется. Исключение: Tennis/Ace для общего Total допускает коэффициент 2.4-2.7 и корректирует общий тотал для сравнения: Total_B - 1, Total_M + 1. После этого общий Total сравнивается с IndTotal1 + IndTotal2. Для индивидуальных тоталов Param корректируется к центральному: при коэффициенте 1.5-1.65 для IndTotal_B прибавляется 0.5, для IndTotal_M отнимается 0.5; при коэффициенте 2.3-2.6 корректировка обратная: для IndTotal_B отнимается 0.5, для IndTotal_M прибавляется 0.5. Волейбол period 0 исключен. Аномалия появляется, если абсолютная разница между Total и ожидаемой суммой выше динамического порога: <=5: 1.0, <=10: 1.5, <=20: 2.0, <=35: 2.0, <=60: 3.0, <=80: 4.0, <=120: 6.0, >120: 8.0. Для Rugby критический порог дополнительно увеличивается на 1.0."
   },
   stat_conflicts: {
     title: "Stat Conflicts",
@@ -478,7 +478,7 @@ function describeAnomaly(item) {
     return `В матче фаворит ${valueOrDash(payload.MatchFavorite)}, но в периоде ${valueOrDash(payload.Period)} фаворит ${valueOrDash(payload.PeriodFavorite)}. GameType: ${valueOrDash(payload.GameType)}.`;
   }
   if (item.check_name === "total_deviations_average") {
-    return `Общий тотал ${adjustedParamText(payload, "Total")} не сходится с расчетной суммой индивидуальных тоталов ${adjustedParamText(payload, "IndTotal1")} + ${adjustedParamText(payload, "IndTotal2")} = ${valueOrDash(payload.Expected)}. Дельта: ${valueOrDash(payload.Delta)}, критический порог: ${valueOrDash(payload.CriticalDelta)}.`;
+    return `Общий тотал ${adjustedParamText(payload, "Total")} не сходится с расчетной суммой индивидуальных тоталов ${adjustedParamText(payload, "IndTotal1")} + ${adjustedParamText(payload, "IndTotal2")} = ${valueOrDash(payload.Expected)}. Дельта: ${valueOrDash(payload.Delta)}, |дельта|: ${valueOrDash(payload.AbsDelta ?? Math.abs(Number(payload.Delta)))}, критический порог: ${valueOrDash(payload.CriticalDelta)}.`;
   }
   if (item.check_name === "period_deviations_average") {
     const periods = String(payload.Periods || "1+2").split("+").filter(Boolean);
@@ -724,7 +724,7 @@ function summaryDetails(item) {
       {
         label: "Ключ",
         value: `Expected ${valueOrDash(payload.Expected)}`,
-        sub: `Δ ${valueOrDash(payload.Delta)} · crit ${valueOrDash(payload.CriticalDelta)}`,
+        sub: `Δ ${valueOrDash(payload.Delta)} · |Δ| ${valueOrDash(payload.AbsDelta ?? Math.abs(Number(payload.Delta)))} · crit ${valueOrDash(payload.CriticalDelta)}`,
       },
     ];
   }

@@ -484,11 +484,12 @@ def analyze_total_deviations_average(df):
             for _, item in pivot.loc[valid].iterrows():
                 expected = item[ind1_col] + item[ind2_col]
                 delta = item[total_col] - expected
+                abs_delta = abs(delta)
                 gi = info.get(item["MainGameId"], {})
                 threshold = period_deviation_threshold(item[total_col])
                 if threshold is not None and gi.get("SportName") == "Rugby":
                     threshold += 1.0
-                if threshold is None or delta <= threshold:
+                if threshold is None or abs_delta <= threshold:
                     continue
                 total_line = detail_by_key.get((item["MainGameId"], item["GameType"], period, f"Total_{side}"))
                 ind1_line = detail_by_key.get((item["MainGameId"], item["GameType"], period, f"IndTotal_1_{side}"))
@@ -531,9 +532,10 @@ def analyze_total_deviations_average(df):
                     "IndTotal2Adjustment": rounded_number(ind2_line.get("ParamAdjustment") if ind2_line is not None else None),
                     "Expected": round(expected, 4),
                     "Delta": round(delta, 4),
+                    "AbsDelta": round(abs_delta, 4),
                     "CriticalDelta": threshold,
                 })
-    return sorted(rows, key=lambda row: float(row["Delta"]), reverse=True)
+    return sorted(rows, key=lambda row: abs(float(row["Delta"])), reverse=True)
 
 
 def get_match_favorite(p1, p2, threshold=0.10, max_coef=2.2):

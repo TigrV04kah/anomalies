@@ -62,18 +62,13 @@ POISSON_TOTAL_MARKETS = {
     "IndTotal_2_M": ("IndTotal2", "M"),
 }
 BOUNDED_SCORE_SPORT_PERIODS = {
-    "Tennis": {1, 2, 3},
     "Volleyball": {1, 2, 3, 4, 5},
 }
 BOUNDED_SCORE_PROBABILITY_THRESHOLDS = {
-    "Tennis": 0.095,
     "Volleyball": 0.185,
 }
 BOUNDED_SCORE_TOTAL_MARKETS = POISSON_TOTAL_MARKETS
 BOUNDED_SCORE_MAX_CONSTRAINTS_PER_SIDE = 12
-BOUNDED_SCORE_TENNIS_LOW_OVER_COEF = 1.35
-BOUNDED_SCORE_TENNIS_LOW_OVER_PARAM_SHIFT = 1.0
-BOUNDED_SCORE_TENNIS_LOW_OVER_ADJUSTED_COEF = 1.8
 PERIOD_CONFLICT_ESPORTS_SUBSPORTS = {"Valorant", "CoD", "Dota2", "CS2"}
 PERIOD_CONFLICT_ESPORTS_MATCH_PROBABILITY_DELTA = 0.14
 PERIOD_CONFLICT_ESPORTS_PERIOD_PROBABILITY_DELTA = 0.15
@@ -785,14 +780,6 @@ def analyze_poisson_total_consistency(df):
 
 def bounded_score_grid(sport, period):
     period = int(period)
-    if sport == "Tennis":
-        scores = []
-        for loser in range(0, 5):
-            scores.append((6, loser))
-            scores.append((loser, 6))
-        scores.extend([(7, 5), (5, 7), (7, 6), (6, 7)])
-        return np.array(scores, dtype=float)
-
     if sport == "Volleyball":
         target = 15 if period == 5 else 25
         cap = 35 if period == 5 else 50
@@ -810,10 +797,7 @@ def bounded_score_grid(sport, period):
 
 def bounded_score_prior(sport, period, scores):
     totals = scores.sum(axis=1)
-    if sport == "Tennis":
-        center = 9.5
-        sigma = 2.0
-    elif sport == "Volleyball" and int(period) == 5:
+    if sport == "Volleyball" and int(period) == 5:
         center = 27.0
         sigma = 5.0
     else:
@@ -962,24 +946,8 @@ def analyze_bounded_score_total_consistency(df):
         param_adjustment = 0.0
         coef_b_adjustment = 0.0
         adjustment_reason = None
-        adjusted_probability = None
-        if (
-            over.get("SportName") == "Tennis" and
-            over.get("BaseMarket") in {"IndTotal1", "IndTotal2"} and
-            adjusted_coef_b < BOUNDED_SCORE_TENNIS_LOW_OVER_COEF
-        ):
-            adjusted_param += BOUNDED_SCORE_TENNIS_LOW_OVER_PARAM_SHIFT
-            coef_b_adjustment = BOUNDED_SCORE_TENNIS_LOW_OVER_ADJUSTED_COEF - adjusted_coef_b
-            adjusted_coef_b = BOUNDED_SCORE_TENNIS_LOW_OVER_ADJUSTED_COEF
-            param_adjustment = BOUNDED_SCORE_TENNIS_LOW_OVER_PARAM_SHIFT
-            adjustment_reason = "tennis_low_over_coef"
-            adjusted_probability = 1.0 / adjusted_coef_b
 
-        probability = (
-            adjusted_probability
-            if adjusted_probability is not None
-            else normalized_over_probability(adjusted_coef_b, under.get("Coef"))
-        )
+        probability = normalized_over_probability(adjusted_coef_b, under.get("Coef"))
         if probability is None:
             continue
         pair_rows.append({

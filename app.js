@@ -113,8 +113,8 @@ Object.assign(CHECK_HELP, {
   },
   bounded_score_total_consistency: {
     title: "Bounded Score Total Consistency",
-    short: "Checks Total_B in Tennis and Volleyball through a bounded score grid.",
-    long: "For Tennis periods 1, 2, 3 and Volleyball periods 1, 2, 3, 4, 5, the check builds valid score grids, normalizes B/M probabilities, fits the grid to individual totals, and compares model P(Total_B) with market P(Total_B). Period 0 is excluded. For Tennis period individual totals, if an over coefficient is below 1.35, the line is adjusted before fitting: Param + 1 and CoefB = 1.8. Thresholds: Tennis 9.5 p.p., Volleyball 18.5 p.p."
+    short: "Checks Volleyball Total_B through a bounded score grid.",
+    long: "For Volleyball periods 1, 2, 3, 4, 5, the check builds valid score grids, normalizes B/M probabilities, fits the grid to individual totals, and compares model P(Total_B) with market P(Total_B). Period 0 is excluded. Threshold: Volleyball 18.5 p.p. Tennis is disabled for this rule and will need separate research."
   },
   stat_conflicts: {
     title: "Stat Conflicts",

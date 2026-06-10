@@ -332,7 +332,7 @@ bounded_score_total_consistency
 
 Purpose:
 
-Checks total consistency for sports where the score has a fixed set/period structure and simple Poisson by points is too rough:
+Checks total consistency for volleyball periods where the score has a fixed period structure and simple Poisson by points is too rough:
 
 ```text
 market P(Total_B) ~= model P(total score > Total_B Param)
@@ -340,10 +340,10 @@ market P(Total_B) ~= model P(total score > Total_B Param)
 
 Scope:
 
-- enabled only for `Tennis` and `Volleyball`;
-- `Tennis`: periods `1`, `2`, `3`;
+- enabled only for `Volleyball`;
 - `Volleyball`: periods `1`, `2`, `3`, `4`, `5`;
 - `Volleyball` period `0` is intentionally excluded;
+- `Tennis` is disabled for this rule. The current bounded-score model is not reliable enough for tennis sets and needs separate research;
 - only half-point parameters (`.5`);
 - all compared lines must come from the same source/bookmaker;
 - only `Total_B` creates a signal; `Total_M` is used only to normalize the B/M probability pair.
@@ -351,7 +351,6 @@ Scope:
 Model:
 
 - build same-parameter B/M pairs for `Total`, `IndTotal1`, and `IndTotal2`;
-- for `Tennis` period individual-total lines, if an over-side coefficient is below `1.35`, adjust that line before fitting: `Param + 1`, `CoefB = 1.8`; general `Total_B` lines are not adjusted by this rule;
 - normalize over probability:
 
 ```text
@@ -359,7 +358,6 @@ p_over = (1 / coef_B) / ((1 / coef_B) + (1 / coef_M))
 ```
 
 - build a bounded score grid:
-  - tennis set scores from `6:0` to `7:6`;
   - volleyball regular set scores to `25` with two-point advantage;
   - volleyball fifth-set scores to `15` with two-point advantage;
 - fit the score-grid distribution to available individual totals;
@@ -367,7 +365,6 @@ p_over = (1 / coef_B) / ((1 / coef_B) + (1 / coef_M))
 
 Anomaly:
 
-- `Tennis`: absolute probability delta greater than `9.5 p.p.`;
 - `Volleyball`: absolute probability delta greater than `18.5 p.p.`;
 
 ### Stat Conflicts

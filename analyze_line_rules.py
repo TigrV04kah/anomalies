@@ -71,6 +71,9 @@ BOUNDED_SCORE_PROBABILITY_THRESHOLDS = {
 }
 BOUNDED_SCORE_TOTAL_MARKETS = POISSON_TOTAL_MARKETS
 BOUNDED_SCORE_MAX_CONSTRAINTS_PER_SIDE = 12
+BOUNDED_SCORE_TENNIS_LOW_OVER_COEF = 1.35
+BOUNDED_SCORE_TENNIS_LOW_OVER_PARAM_SHIFT = 1.0
+BOUNDED_SCORE_TENNIS_LOW_OVER_ADJUSTED_COEF = 1.8
 PERIOD_CONFLICT_ESPORTS_SUBSPORTS = {"Valorant", "CoD", "Dota2", "CS2"}
 PERIOD_CONFLICT_ESPORTS_MATCH_PROBABILITY_DELTA = 0.14
 PERIOD_CONFLICT_ESPORTS_PERIOD_PROBABILITY_DELTA = 0.15
@@ -954,7 +957,29 @@ def analyze_bounded_score_total_consistency(df):
             continue
         over = over_rows.iloc[0]
         under = under_rows.iloc[0]
-        probability = normalized_over_probability(over.get("Coef"), under.get("Coef"))
+        adjusted_param = float(over.get("Param"))
+        adjusted_coef_b = float(over.get("Coef"))
+        param_adjustment = 0.0
+        coef_b_adjustment = 0.0
+        adjustment_reason = None
+        adjusted_probability = None
+        if (
+            over.get("SportName") == "Tennis" and
+            over.get("BaseMarket") in {"IndTotal1", "IndTotal2"} and
+            adjusted_coef_b < BOUNDED_SCORE_TENNIS_LOW_OVER_COEF
+        ):
+            adjusted_param += BOUNDED_SCORE_TENNIS_LOW_OVER_PARAM_SHIFT
+            coef_b_adjustment = BOUNDED_SCORE_TENNIS_LOW_OVER_ADJUSTED_COEF - adjusted_coef_b
+            adjusted_coef_b = BOUNDED_SCORE_TENNIS_LOW_OVER_ADJUSTED_COEF
+            param_adjustment = BOUNDED_SCORE_TENNIS_LOW_OVER_PARAM_SHIFT
+            adjustment_reason = "tennis_low_over_coef"
+            adjusted_probability = 1.0 / adjusted_coef_b
+
+        probability = (
+            adjusted_probability
+            if adjusted_probability is not None
+            else normalized_over_probability(adjusted_coef_b, under.get("Coef"))
+        )
         if probability is None:
             continue
         pair_rows.append({
@@ -969,9 +994,14 @@ def analyze_bounded_score_total_consistency(df):
             "Opp1": over.get("Opp1"),
             "Opp2": over.get("Opp2"),
             "Start": over.get("Start"),
-            "Param": float(over.get("Param")),
-            "CoefB": float(over.get("Coef")),
+            "Param": adjusted_param,
+            "OriginalParam": float(over.get("Param")),
+            "ParamAdjustment": param_adjustment,
+            "CoefB": adjusted_coef_b,
+            "OriginalCoefB": float(over.get("Coef")),
+            "CoefBAdjustment": coef_b_adjustment,
             "CoefM": float(under.get("Coef")),
+            "AdjustmentReason": adjustment_reason,
             "ProbabilityOver": float(probability),
             "ProbabilityUnder": float(1.0 - probability),
             "Source": source_label(over),
@@ -1046,8 +1076,13 @@ def analyze_bounded_score_total_consistency(df):
             "TotalGameId": total.get("GameIdB"),
             "TotalUnderGameId": total.get("GameIdM"),
             "TotalParam": rounded_number(total.get("Param")),
+            "TotalOriginalParam": rounded_number(total.get("OriginalParam")),
+            "TotalParamAdjustment": rounded_number(total.get("ParamAdjustment")),
             "TotalCoefB": rounded_number(total.get("CoefB")),
+            "TotalOriginalCoefB": rounded_number(total.get("OriginalCoefB")),
+            "TotalCoefBAdjustment": rounded_number(total.get("CoefBAdjustment")),
             "TotalCoefM": rounded_number(total.get("CoefM")),
+            "TotalAdjustmentReason": total.get("AdjustmentReason"),
             "TotalProbabilityOver": rounded_number(market_total_probability, 6),
             "TotalProbabilityUnder": rounded_number(total.get("ProbabilityUnder"), 6),
             "ModelTotalProbabilityOver": rounded_number(model_total_probability, 6),
@@ -1068,14 +1103,24 @@ def analyze_bounded_score_total_consistency(df):
             "IndTotal1GameId": ind1_center.get("GameIdB"),
             "IndTotal1UnderGameId": ind1_center.get("GameIdM"),
             "IndTotal1Param": rounded_number(ind1_center.get("Param")),
+            "IndTotal1OriginalParam": rounded_number(ind1_center.get("OriginalParam")),
+            "IndTotal1ParamAdjustment": rounded_number(ind1_center.get("ParamAdjustment")),
             "IndTotal1CoefB": rounded_number(ind1_center.get("CoefB")),
+            "IndTotal1OriginalCoefB": rounded_number(ind1_center.get("OriginalCoefB")),
+            "IndTotal1CoefBAdjustment": rounded_number(ind1_center.get("CoefBAdjustment")),
             "IndTotal1CoefM": rounded_number(ind1_center.get("CoefM")),
+            "IndTotal1AdjustmentReason": ind1_center.get("AdjustmentReason"),
             "IndTotal1ProbabilityOver": rounded_number(ind1_center.get("ProbabilityOver"), 6),
             "IndTotal2GameId": ind2_center.get("GameIdB"),
             "IndTotal2UnderGameId": ind2_center.get("GameIdM"),
             "IndTotal2Param": rounded_number(ind2_center.get("Param")),
+            "IndTotal2OriginalParam": rounded_number(ind2_center.get("OriginalParam")),
+            "IndTotal2ParamAdjustment": rounded_number(ind2_center.get("ParamAdjustment")),
             "IndTotal2CoefB": rounded_number(ind2_center.get("CoefB")),
+            "IndTotal2OriginalCoefB": rounded_number(ind2_center.get("OriginalCoefB")),
+            "IndTotal2CoefBAdjustment": rounded_number(ind2_center.get("CoefBAdjustment")),
             "IndTotal2CoefM": rounded_number(ind2_center.get("CoefM")),
+            "IndTotal2AdjustmentReason": ind2_center.get("AdjustmentReason"),
             "IndTotal2ProbabilityOver": rounded_number(ind2_center.get("ProbabilityOver"), 6),
         })
 

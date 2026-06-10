@@ -351,6 +351,7 @@ Scope:
 Model:
 
 - build same-parameter B/M pairs for `Total`, `IndTotal1`, and `IndTotal2`;
+- for `Tennis` period individual-total lines, if an over-side coefficient is below `1.35`, adjust that line before fitting: `Param + 1`, `CoefB = 1.8`; general `Total_B` lines are not adjusted by this rule;
 - normalize over probability:
 
 ```text
@@ -367,7 +368,7 @@ p_over = (1 / coef_B) / ((1 / coef_B) + (1 / coef_M))
 Anomaly:
 
 - `Tennis`: absolute probability delta greater than `9.5 p.p.`;
-- `Volleyball`: absolute probability delta greater than `18.5 p.p.`.
+- `Volleyball`: absolute probability delta greater than `18.5 p.p.`;
 
 ### Stat Conflicts
 

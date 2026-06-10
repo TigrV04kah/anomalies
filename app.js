@@ -111,6 +111,11 @@ Object.assign(CHECK_HELP, {
     short: "Checks total consistency through normalized B/M probabilities and Poisson lambda.",
     long: "For Football, Basketball, Hockey, Handball, WaterPolo and FootHall, the check runs for every period that has a complete same-source Total_B/Total_M, IndTotal_1_B/M and IndTotal_2_B/M set on .5 parameters. It normalizes over probability, keeps only central pairs with normalized over probability between 35% and 65%, converts it to Poisson lambda, and compares lambda_total with lambda_ind1 + lambda_ind2. The anomaly threshold is abs lambda delta > 1.0."
   },
+  bounded_score_total_consistency: {
+    title: "Bounded Score Total Consistency",
+    short: "Checks Total_B in Tennis and Volleyball through a bounded score grid.",
+    long: "For Tennis periods 1, 2, 3 and Volleyball periods 1, 2, 3, 4, 5, the check builds valid score grids, normalizes B/M probabilities, fits the grid to individual totals, and compares model P(Total_B) with market P(Total_B). Period 0 is excluded. Thresholds: Tennis 9.5 p.p., Volleyball 18.5 p.p."
+  },
   stat_conflicts: {
     title: "Stat Conflicts",
     short: "Проверяет конфликт между фаворитом матча и фаворитом по статистическому рынку.",
@@ -495,6 +500,9 @@ function describeAnomaly(item) {
   if (item.check_name === "poisson_total_consistency") {
     return `Poisson total mismatch: lambda total ${valueOrDash(payload.TotalLambda)} vs individual sum ${valueOrDash(payload.ExpectedLambda)}. Delta lambda: ${valueOrDash(payload.LambdaDelta)}, threshold: ${valueOrDash(payload.CriticalLambdaDelta)}.`;
   }
+  if (item.check_name === "bounded_score_total_consistency") {
+    return `Bounded score total mismatch: market P(Total_B) ${fmtProbability(payload.TotalProbabilityOver)} vs model ${fmtProbability(payload.ModelTotalProbabilityOver)}. Delta: ${valueOrDash(payload.AbsProbabilityDeltaPp)} p.p., threshold: ${valueOrDash(payload.CriticalProbabilityDeltaPp)} p.p.`;
+  }
   if (item.check_name === "period_deviations_average") {
     const periods = String(payload.Periods || "1+2").split("+").filter(Boolean);
     const periodValues = periods.map(period => valueOrDash(payload[`P${period}`])).join(" + ");
@@ -825,6 +833,25 @@ function summaryDetails(item) {
         label: "Key",
         value: `Δλ ${valueOrDash(payload.LambdaDelta)}`,
         sub: `|Δλ| ${valueOrDash(payload.AbsLambdaDelta)} · crit ${valueOrDash(payload.CriticalLambdaDelta)}`,
+      },
+    ];
+  }
+  if (item.check_name === "bounded_score_total_consistency") {
+    return [
+      {
+        label: `Period ${valueOrDash(payload.Period)} · Total B`,
+        value: valueOrDash(payload.TotalParam),
+        sub: `market ${fmtProbability(payload.TotalProbabilityOver)} / model ${fmtProbability(payload.ModelTotalProbabilityOver)}`,
+      },
+      {
+        label: "Expected score",
+        value: `${valueOrDash(payload.ExpectedScore1)} + ${valueOrDash(payload.ExpectedScore2)} = ${valueOrDash(payload.ExpectedTotal)}`,
+        sub: `${valueOrDash(payload.ConstraintCount)} ind-total constraints`,
+      },
+      {
+        label: "Key",
+        value: `Δ ${valueOrDash(payload.AbsProbabilityDeltaPp)} p.p.`,
+        sub: `crit ${valueOrDash(payload.CriticalProbabilityDeltaPp)} p.p. · ${valueOrDash(payload.Source)}`,
       },
     ];
   }

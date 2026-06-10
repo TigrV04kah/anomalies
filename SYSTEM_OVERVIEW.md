@@ -322,6 +322,53 @@ Excluded for now:
 
 - `Tennis`, `TableTennis`, `Volleyball`, `Rugby`, and other sports. Tests showed that their scoring structure does not fit this simple Poisson total model reliably.
 
+### Bounded Score Total Consistency
+
+Internal name:
+
+```text
+bounded_score_total_consistency
+```
+
+Purpose:
+
+Checks total consistency for sports where the score has a fixed set/period structure and simple Poisson by points is too rough:
+
+```text
+market P(Total_B) ~= model P(total score > Total_B Param)
+```
+
+Scope:
+
+- enabled only for `Tennis` and `Volleyball`;
+- `Tennis`: periods `1`, `2`, `3`;
+- `Volleyball`: periods `1`, `2`, `3`, `4`, `5`;
+- `Volleyball` period `0` is intentionally excluded;
+- only half-point parameters (`.5`);
+- all compared lines must come from the same source/bookmaker;
+- only `Total_B` creates a signal; `Total_M` is used only to normalize the B/M probability pair.
+
+Model:
+
+- build same-parameter B/M pairs for `Total`, `IndTotal1`, and `IndTotal2`;
+- normalize over probability:
+
+```text
+p_over = (1 / coef_B) / ((1 / coef_B) + (1 / coef_M))
+```
+
+- build a bounded score grid:
+  - tennis set scores from `6:0` to `7:6`;
+  - volleyball regular set scores to `25` with two-point advantage;
+  - volleyball fifth-set scores to `15` with two-point advantage;
+- fit the score-grid distribution to available individual totals;
+- compare model `P(score1 + score2 > TotalParam)` with market normalized `P(Total_B)`.
+
+Anomaly:
+
+- `Tennis`: absolute probability delta greater than `9.5 p.p.`;
+- `Volleyball`: absolute probability delta greater than `18.5 p.p.`.
+
 ### Stat Conflicts
 
 Internal name:

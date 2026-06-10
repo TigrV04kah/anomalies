@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 
@@ -60,6 +61,16 @@ POISSON_TOTAL_MARKETS = {
     "IndTotal_2_B": ("IndTotal2", "B"),
     "IndTotal_2_M": ("IndTotal2", "M"),
 }
+BOUNDED_SCORE_SPORT_PERIODS = {
+    "Tennis": {1, 2, 3},
+    "Volleyball": {1, 2, 3, 4, 5},
+}
+BOUNDED_SCORE_PROBABILITY_THRESHOLDS = {
+    "Tennis": 0.095,
+    "Volleyball": 0.185,
+}
+BOUNDED_SCORE_TOTAL_MARKETS = POISSON_TOTAL_MARKETS
+BOUNDED_SCORE_MAX_CONSTRAINTS_PER_SIDE = 12
 PERIOD_CONFLICT_ESPORTS_SUBSPORTS = {"Valorant", "CoD", "Dota2", "CS2"}
 PERIOD_CONFLICT_ESPORTS_MATCH_PROBABILITY_DELTA = 0.14
 PERIOD_CONFLICT_ESPORTS_PERIOD_PROBABILITY_DELTA = 0.15
@@ -767,6 +778,308 @@ def analyze_poisson_total_consistency(df):
             "ParamDelta": rounded_number(item.get("Total_Param") - item.get("IndTotal1_Param") - item.get("IndTotal2_Param"), 4),
         })
     return sorted(rows, key=lambda row: float(row["AbsLambdaDelta"]), reverse=True)
+
+
+def bounded_score_grid(sport, period):
+    period = int(period)
+    if sport == "Tennis":
+        scores = []
+        for loser in range(0, 5):
+            scores.append((6, loser))
+            scores.append((loser, 6))
+        scores.extend([(7, 5), (5, 7), (7, 6), (6, 7)])
+        return np.array(scores, dtype=float)
+
+    if sport == "Volleyball":
+        target = 15 if period == 5 else 25
+        cap = 35 if period == 5 else 50
+        scores = []
+        for loser in range(0, target - 1):
+            scores.append((target, loser))
+            scores.append((loser, target))
+        for winner in range(target + 1, cap + 1):
+            scores.append((winner, winner - 2))
+            scores.append((winner - 2, winner))
+        return np.array(scores, dtype=float)
+
+    return np.empty((0, 2), dtype=float)
+
+
+def bounded_score_prior(sport, period, scores):
+    totals = scores.sum(axis=1)
+    if sport == "Tennis":
+        center = 9.5
+        sigma = 2.0
+    elif sport == "Volleyball" and int(period) == 5:
+        center = 27.0
+        sigma = 5.0
+    else:
+        center = 45.0
+        sigma = 6.0
+    prior = np.exp(-0.5 * ((totals - center) / sigma) ** 2)
+    prior = np.maximum(prior, 1e-12)
+    return prior / prior.sum()
+
+
+def bounded_score_fit(scores, constraints, prior, iterations=350, l2=0.002):
+    if len(constraints) < 2:
+        return None
+    features = []
+    targets = []
+    sides = set()
+    for side, param, target_probability in constraints:
+        if side not in {"IndTotal1", "IndTotal2"}:
+            continue
+        if target_probability is None or pd.isna(target_probability):
+            continue
+        target_probability = float(target_probability)
+        if not (0.0 < target_probability < 1.0):
+            continue
+        values = scores[:, 0] if side == "IndTotal1" else scores[:, 1]
+        features.append((values > float(param)).astype(float))
+        targets.append(min(max(target_probability, 0.001), 0.999))
+        sides.add(side)
+
+    if len(features) < 2 or sides != {"IndTotal1", "IndTotal2"}:
+        return None
+
+    a = np.vstack(features)
+    y = np.array(targets, dtype=float)
+    prior_log = np.log(np.maximum(prior, 1e-300))
+    theta = np.zeros(len(y), dtype=float)
+    first_moment = np.zeros_like(theta)
+    second_moment = np.zeros_like(theta)
+    best = None
+    best_loss = float("inf")
+
+    for step in range(1, iterations + 1):
+        logits = prior_log + theta @ a
+        logits -= logits.max()
+        weights = np.exp(logits)
+        probabilities = weights / weights.sum()
+        predicted = a @ probabilities
+        diff = predicted - y
+        loss = float(np.mean(diff ** 2) + l2 * float(theta @ theta))
+        if loss < best_loss:
+            best_loss = loss
+            best = (probabilities.copy(), predicted.copy(), loss)
+        if loss < 1e-7:
+            break
+
+        covariance = (a * probabilities) @ a.T - np.outer(predicted, predicted)
+        gradient = (2.0 / len(y)) * (covariance @ diff) + 2.0 * l2 * theta
+        first_moment = 0.9 * first_moment + 0.1 * gradient
+        second_moment = 0.999 * second_moment + 0.001 * (gradient ** 2)
+        step_size = 0.08 * (math.sqrt(1.0 - 0.999 ** step) / (1.0 - 0.9 ** step))
+        theta -= step_size * first_moment / (np.sqrt(second_moment) + 1e-8)
+
+    if best is None:
+        return None
+
+    probabilities, predicted, loss = best
+    return {
+        "probabilities": probabilities,
+        "predicted": predicted,
+        "targets": y,
+        "loss": loss,
+        "mae": float(np.mean(np.abs(predicted - y))),
+    }
+
+
+def bounded_select_constraints(ind_lines):
+    selected = []
+    for side in ("IndTotal1", "IndTotal2"):
+        side_lines = ind_lines[ind_lines["BaseMarket"] == side].copy()
+        if side_lines.empty:
+            continue
+        side_lines["CenterDistance"] = (side_lines["ProbabilityOver"] - 0.5).abs()
+        side_lines = side_lines.sort_values(
+            ["CenterDistance", "Param", "CoefB"],
+            kind="mergesort",
+        ).head(BOUNDED_SCORE_MAX_CONSTRAINTS_PER_SIDE)
+        selected.extend(
+            (row["BaseMarket"], row["Param"], row["ProbabilityOver"])
+            for _, row in side_lines.iterrows()
+        )
+    return selected
+
+
+def analyze_bounded_score_total_consistency(df):
+    if df.empty:
+        return []
+    required = {"MainGameId", "GameId", "GameType", "Period", "SportName", "EventType", "Param", "Coef"}
+    if not required.issubset(df.columns):
+        return []
+
+    filtered = df[
+        (df["SportName"].isin(BOUNDED_SCORE_SPORT_PERIODS)) &
+        (df["EventType"].isin(BOUNDED_SCORE_TOTAL_MARKETS)) &
+        (df["Coef"] > 1) &
+        (df["Param"].notna())
+    ].copy()
+    if filtered.empty:
+        return []
+
+    filtered = filtered[filtered["Param"].apply(is_half_point_param)].copy()
+    if filtered.empty:
+        return []
+    filtered["PeriodInt"] = pd.to_numeric(filtered["Period"], errors="coerce")
+    filtered = filtered[
+        filtered.apply(
+            lambda row: row["PeriodInt"] in BOUNDED_SCORE_SPORT_PERIODS.get(row["SportName"], set()),
+            axis=1,
+        )
+    ].copy()
+    if filtered.empty:
+        return []
+
+    filtered["BaseMarket"] = filtered["EventType"].map(lambda event_type: BOUNDED_SCORE_TOTAL_MARKETS[event_type][0])
+    filtered["Side"] = filtered["EventType"].map(lambda event_type: BOUNDED_SCORE_TOTAL_MARKETS[event_type][1])
+    if "Contora" in filtered.columns:
+        filtered["SourceKey"] = filtered["Contora"]
+    else:
+        filtered["SourceKey"] = None
+    if "ContoraName" in filtered.columns:
+        filtered["SourceKey"] = filtered["SourceKey"].where(filtered["SourceKey"].notna(), filtered["ContoraName"])
+    filtered = filtered[filtered["SourceKey"].notna()].copy()
+    if filtered.empty:
+        return []
+
+    pair_rows = []
+    group_columns = ["MainGameId", "GameType", "Period", "SourceKey", "BaseMarket", "Param"]
+    for _, group in filtered.groupby(group_columns, dropna=False):
+        over_rows = group[group["Side"] == "B"].sort_values(["Coef", "GameId"], kind="mergesort")
+        under_rows = group[group["Side"] == "M"].sort_values(["Coef", "GameId"], kind="mergesort")
+        if over_rows.empty or under_rows.empty:
+            continue
+        over = over_rows.iloc[0]
+        under = under_rows.iloc[0]
+        probability = normalized_over_probability(over.get("Coef"), under.get("Coef"))
+        if probability is None:
+            continue
+        pair_rows.append({
+            "MainGameId": over.get("MainGameId"),
+            "GameType": over.get("GameType"),
+            "Period": over.get("Period"),
+            "PeriodInt": int(over.get("Period")),
+            "SourceKey": over.get("SourceKey"),
+            "BaseMarket": over.get("BaseMarket"),
+            "Sport": over.get("SportName"),
+            "Champ": over.get("Champ"),
+            "Opp1": over.get("Opp1"),
+            "Opp2": over.get("Opp2"),
+            "Start": over.get("Start"),
+            "Param": float(over.get("Param")),
+            "CoefB": float(over.get("Coef")),
+            "CoefM": float(under.get("Coef")),
+            "ProbabilityOver": float(probability),
+            "ProbabilityUnder": float(1.0 - probability),
+            "Source": source_label(over),
+            "GameIdB": over.get("GameId"),
+            "GameIdM": under.get("GameId"),
+        })
+
+    if not pair_rows:
+        return []
+
+    pairs = pd.DataFrame(pair_rows)
+    pairs["CenterDistance"] = (pairs["ProbabilityOver"] - 0.5).abs()
+    rows = []
+    for _, group in pairs.groupby(["MainGameId", "GameType", "Period", "SourceKey"], dropna=False):
+        total_lines = group[group["BaseMarket"] == "Total"].copy()
+        ind_lines = group[group["BaseMarket"].isin(["IndTotal1", "IndTotal2"])].copy()
+        if total_lines.empty or ind_lines.empty:
+            continue
+        if {"IndTotal1", "IndTotal2"} - set(ind_lines["BaseMarket"].dropna()):
+            continue
+
+        total = total_lines.sort_values(
+            ["CenterDistance", "CoefB", "Param"],
+            kind="mergesort",
+        ).iloc[0]
+        sport = total.get("Sport")
+        period = int(total.get("PeriodInt"))
+        threshold = BOUNDED_SCORE_PROBABILITY_THRESHOLDS.get(sport)
+        scores = bounded_score_grid(sport, period)
+        if threshold is None or scores.size == 0:
+            continue
+
+        constraints = bounded_select_constraints(ind_lines)
+        prior = bounded_score_prior(sport, period, scores)
+        fit = bounded_score_fit(scores, constraints, prior)
+        if fit is None:
+            continue
+
+        probabilities = fit["probabilities"]
+        model_total_probability = float(probabilities[(scores[:, 0] + scores[:, 1]) > float(total["Param"])].sum())
+        market_total_probability = float(total["ProbabilityOver"])
+        delta = market_total_probability - model_total_probability
+        abs_delta = abs(delta)
+        if abs_delta <= threshold:
+            continue
+
+        ind1_center = ind_lines[ind_lines["BaseMarket"] == "IndTotal1"].sort_values(
+            ["CenterDistance", "CoefB", "Param"],
+            kind="mergesort",
+        ).iloc[0]
+        ind2_center = ind_lines[ind_lines["BaseMarket"] == "IndTotal2"].sort_values(
+            ["CenterDistance", "CoefB", "Param"],
+            kind="mergesort",
+        ).iloc[0]
+
+        rows.append({
+            "Status": "DIFF",
+            "MainGameId": total.get("MainGameId"),
+            "GameId": total.get("GameIdB"),
+            "GameType": total.get("GameType"),
+            "Sport": sport,
+            "Champ": total.get("Champ"),
+            "Opp1": total.get("Opp1"),
+            "Opp2": total.get("Opp2"),
+            "Start": total.get("Start"),
+            "Period": total.get("Period"),
+            "Type": "B",
+            "EventType": "Total_B",
+            "EventTypes": "Total_B / Total_M / IndTotal_1_B / IndTotal_1_M / IndTotal_2_B / IndTotal_2_M",
+            "SourceKey": total.get("SourceKey"),
+            "Source": total.get("Source"),
+            "TotalGameId": total.get("GameIdB"),
+            "TotalUnderGameId": total.get("GameIdM"),
+            "TotalParam": rounded_number(total.get("Param")),
+            "TotalCoefB": rounded_number(total.get("CoefB")),
+            "TotalCoefM": rounded_number(total.get("CoefM")),
+            "TotalProbabilityOver": rounded_number(market_total_probability, 6),
+            "TotalProbabilityUnder": rounded_number(total.get("ProbabilityUnder"), 6),
+            "ModelTotalProbabilityOver": rounded_number(model_total_probability, 6),
+            "ProbabilityDelta": round(delta, 6),
+            "AbsProbabilityDelta": round(abs_delta, 6),
+            "ProbabilityDeltaPp": round(delta * 100.0, 2),
+            "AbsProbabilityDeltaPp": round(abs_delta * 100.0, 2),
+            "CriticalProbabilityDelta": threshold,
+            "CriticalProbabilityDeltaPp": round(threshold * 100.0, 2),
+            "ExpectedScore1": round(float((scores[:, 0] * probabilities).sum()), 4),
+            "ExpectedScore2": round(float((scores[:, 1] * probabilities).sum()), 4),
+            "ExpectedTotal": round(float(((scores[:, 0] + scores[:, 1]) * probabilities).sum()), 4),
+            "FitMAE": round(float(fit["mae"]), 6),
+            "FitLoss": round(float(fit["loss"]), 8),
+            "ConstraintCount": len(constraints),
+            "IndTotal1LineCount": int((ind_lines["BaseMarket"] == "IndTotal1").sum()),
+            "IndTotal2LineCount": int((ind_lines["BaseMarket"] == "IndTotal2").sum()),
+            "IndTotal1GameId": ind1_center.get("GameIdB"),
+            "IndTotal1UnderGameId": ind1_center.get("GameIdM"),
+            "IndTotal1Param": rounded_number(ind1_center.get("Param")),
+            "IndTotal1CoefB": rounded_number(ind1_center.get("CoefB")),
+            "IndTotal1CoefM": rounded_number(ind1_center.get("CoefM")),
+            "IndTotal1ProbabilityOver": rounded_number(ind1_center.get("ProbabilityOver"), 6),
+            "IndTotal2GameId": ind2_center.get("GameIdB"),
+            "IndTotal2UnderGameId": ind2_center.get("GameIdM"),
+            "IndTotal2Param": rounded_number(ind2_center.get("Param")),
+            "IndTotal2CoefB": rounded_number(ind2_center.get("CoefB")),
+            "IndTotal2CoefM": rounded_number(ind2_center.get("CoefM")),
+            "IndTotal2ProbabilityOver": rounded_number(ind2_center.get("ProbabilityOver"), 6),
+        })
+
+    return sorted(rows, key=lambda row: float(row["AbsProbabilityDelta"]), reverse=True)
 
 
 def get_match_favorite(p1, p2, threshold=0.10, max_coef=2.2):
@@ -1939,6 +2252,7 @@ def analyze_basketball_q4_handicap_shift(df):
 CHECKS = {
     "period_deviations_average": analyze_period_deviations_average,
     "poisson_total_consistency": analyze_poisson_total_consistency,
+    "bounded_score_total_consistency": analyze_bounded_score_total_consistency,
     "stat_conflicts": analyze_stat_conflicts,
     "individual_total_favorite_consistency": analyze_individual_total_favorite_consistency,
     "mathrobot_individual_total_favorite_consistency": analyze_mathrobot_individual_total_favorite_consistency,

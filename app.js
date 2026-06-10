@@ -1354,8 +1354,8 @@ function renderStats(stats = {}) {
   statsBox.querySelector(".stat-normal b").textContent = stats.normal || 0;
 }
 
-function updateDocumentTitle(activeDefectsCount) {
-  const count = Number(activeDefectsCount) || 0;
+function updateDocumentTitle(activeAnomaliesCount) {
+  const count = Number(activeAnomaliesCount) || 0;
   document.title = count > 0 ? `(${count}) ${BASE_DOCUMENT_TITLE}` : BASE_DOCUMENT_TITLE;
 }
 
@@ -1404,7 +1404,7 @@ async function loadAnomalies({ force = false } = {}) {
     renderStats(data.stats || {});
     renderCheckFilter();
     if (state.scope === "current") {
-      updateDocumentTitle(data.stats?.defect);
+      updateDocumentTitle(state.items.length);
     }
     render();
   } catch (error) {

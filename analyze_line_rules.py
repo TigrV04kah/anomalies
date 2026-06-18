@@ -1267,6 +1267,7 @@ IND_TOTAL_SOFT_PROBABILITY_DELTA_PP = 1.5
 IND_TOTAL_SOFT_COEF_THRESHOLD = 1.1
 IND_TOTAL_CENTER_SOFT_PARAM_DELTA = 0.5
 IND_TOTAL_CENTER_SOFT_PROBABILITY_DELTA_PP = 20.0
+IND_TOTAL_STRONG_MATCH_PROBABILITY_DELTA_PP = 15.0
 MATHROBOT_SOURCE_MARKER = "XMathRobotLine"
 
 
@@ -1308,6 +1309,31 @@ def individual_total_center_soft_reasons(favorite_param, outsider_param, favorit
             f"and probability delta <= {IND_TOTAL_CENTER_SOFT_PROBABILITY_DELTA_PP} pp"
         )
     return reasons, param_delta, probability_delta_pp
+
+
+def match_favorite_probability_delta_pp(favorite, p1_coef, p2_coef):
+    if favorite not in {"p1", "p2"}:
+        return None
+    favorite_coef = p1_coef if favorite == "p1" else p2_coef
+    outsider_coef = p2_coef if favorite == "p1" else p1_coef
+    favorite_probability = probability(favorite_coef)
+    outsider_probability = probability(outsider_coef)
+    if favorite_probability is None or outsider_probability is None:
+        return None
+    return round((favorite_probability - outsider_probability) * 100, 4)
+
+
+def apply_strong_match_hardening(soft_reasons, match_probability_delta_pp):
+    if (
+        soft_reasons and
+        match_probability_delta_pp is not None and
+        match_probability_delta_pp >= IND_TOTAL_STRONG_MATCH_PROBABILITY_DELTA_PP
+    ):
+        return [], (
+            f"match favorite probability delta >= "
+            f"{IND_TOTAL_STRONG_MATCH_PROBABILITY_DELTA_PP} pp"
+        )
+    return soft_reasons, None
 
 
 def is_mathrobot_individual_total_row(row):
@@ -1354,6 +1380,7 @@ def analyze_individual_total_favorite_consistency_rows(df):
         if favorite not in {"p1", "p2"}:
             continue
         outsider = "p2" if favorite == "p1" else "p1"
+        match_probability_delta_pp = match_favorite_probability_delta_pp(favorite, p1_coef, p2_coef)
         game_totals = ind_totals[ind_totals["GameId"] == game_id]
         fav_event = "IndTotal_1_B" if favorite == "p1" else "IndTotal_2_B"
         out_event = "IndTotal_2_B" if favorite == "p1" else "IndTotal_1_B"
@@ -1373,14 +1400,21 @@ def analyze_individual_total_favorite_consistency_rows(df):
                     fav_line["Coef"],
                     out_line["Coef"],
                 )
+                soft_reasons, hardening_reason = apply_strong_match_hardening(
+                    soft_reasons,
+                    match_probability_delta_pp,
+                )
                 rows.append(add_game_info({
                     "Status": "SOFT" if soft_reasons else "DIFF",
                     "Rule": "same individual total parameter has worse favorite coefficient",
                     "Scenario": "same_param_coef_direction",
                     "SoftReason": "; ".join(soft_reasons),
+                    "HardeningReason": hardening_reason,
                     "IndividualProbabilityDeltaPp": probability_delta_pp,
                     "SoftProbabilityDeltaThresholdPp": IND_TOTAL_SOFT_PROBABILITY_DELTA_PP,
                     "SoftCoefThreshold": IND_TOTAL_SOFT_COEF_THRESHOLD,
+                    "MatchFavoriteProbabilityDeltaPp": match_probability_delta_pp,
+                    "StrongMatchProbabilityDeltaThresholdPp": IND_TOTAL_STRONG_MATCH_PROBABILITY_DELTA_PP,
                     "GameId": game_id,
                     "MainGameId": win.get("MainGameId"),
                     "GameType": win.get("GameType"),
@@ -1418,15 +1452,22 @@ def analyze_individual_total_favorite_consistency_rows(df):
             fav_center["Coef"],
             out_center["Coef"],
         )
+        soft_reasons, hardening_reason = apply_strong_match_hardening(
+            soft_reasons,
+            match_probability_delta_pp,
+        )
         rows.append(add_game_info({
             "Status": "SOFT" if soft_reasons else "DIFF",
             "Rule": "favorite individual total center is not higher than outsider center",
             "Scenario": "different_param_center_direction",
             "SoftReason": "; ".join(soft_reasons),
+            "HardeningReason": hardening_reason,
             "CentralParamAbsDelta": abs_param_delta,
             "CentralProbabilityDeltaPp": probability_delta_pp,
             "CentralSoftParamDeltaThreshold": IND_TOTAL_CENTER_SOFT_PARAM_DELTA,
             "CentralSoftProbabilityDeltaThresholdPp": IND_TOTAL_CENTER_SOFT_PROBABILITY_DELTA_PP,
+            "MatchFavoriteProbabilityDeltaPp": match_probability_delta_pp,
+            "StrongMatchProbabilityDeltaThresholdPp": IND_TOTAL_STRONG_MATCH_PROBABILITY_DELTA_PP,
             "GameId": game_id,
             "MainGameId": win.get("MainGameId"),
             "GameType": win.get("GameType"),

@@ -429,6 +429,7 @@ Logic:
 - if both sides have the same `Param`, the favorite side should have a lower coefficient than the outsider side;
 - if the same `Param` is absent, compare the central individual total lines closest to 50% implied probability;
 - small probability deltas and very low coefficients are stored as `SOFT`.
+- strong match favorites are not softened: if the implied probability delta between the match favorite and outsider is at least `15 p.p.`, same-param and central-param individual-total violations stay hard `DIFF` even when the individual-total delta would otherwise be soft.
 
 Rows where both compared individual-total sources are `XMathRobotLine` are intentionally excluded from this general check and emitted by the dedicated MathRobot check below.
 

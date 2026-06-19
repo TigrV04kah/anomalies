@@ -19,3 +19,5 @@ line_reference_maps.json
 # OS/editor noise
 .DS_Store
 Thumbs.db
+
+.vercel

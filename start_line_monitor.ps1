@@ -7,15 +7,60 @@ $Root = if ($MyInvocation.MyCommand.Path) {
 }
 Set-Location $Root
 
-$Python = Join-Path $env:USERPROFILE ".cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
 $Node = Join-Path $env:USERPROFILE ".cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe"
 
-if (-not (Test-Path -LiteralPath $Python)) {
-    $Python = "python"
-}
 if (-not (Test-Path -LiteralPath $Node)) {
     $Node = "node"
 }
+
+function Test-PythonRuntime {
+    param([Parameter(Mandatory = $true)][string]$Executable)
+
+    $RequiredModules = "pandas,numpy,requests,pymongo"
+    $CheckScript = @"
+import importlib.util
+import sys
+
+missing = [name for name in "$RequiredModules".split(",") if importlib.util.find_spec(name) is None]
+if missing:
+    print("missing modules: " + ", ".join(missing))
+    sys.exit(1)
+print(sys.executable)
+"@
+
+    try {
+        $Output = & $Executable -c $CheckScript 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            return $true
+        }
+        Write-Host "Python candidate '$Executable' is not suitable: $Output" -ForegroundColor Yellow
+        return $false
+    } catch {
+        Write-Host "Python candidate '$Executable' failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        return $false
+    }
+}
+
+function Resolve-PythonRuntime {
+    $Candidates = @(
+        "python",
+        (Join-Path $env:USERPROFILE ".cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe")
+    )
+
+    foreach ($Candidate in $Candidates) {
+        if ($Candidate -ne "python" -and -not (Test-Path -LiteralPath $Candidate)) {
+            continue
+        }
+        if (Test-PythonRuntime -Executable $Candidate) {
+            return $Candidate
+        }
+    }
+
+    throw "No Python runtime with required modules found. Install pandas, numpy, requests and pymongo for the Python used by this script."
+}
+
+$Python = Resolve-PythonRuntime
+Write-Host "Using Python: $Python"
 
 foreach ($Name in @("LINE_MONGO_URI", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_PUBLISHABLE_KEY")) {
     if (-not [Environment]::GetEnvironmentVariable($Name, "Process")) {

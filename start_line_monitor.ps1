@@ -16,17 +16,7 @@ if (-not (Test-Path -LiteralPath $Node)) {
 function Test-PythonRuntime {
     param([Parameter(Mandatory = $true)][string]$Executable)
 
-    $RequiredModules = "pandas,numpy,requests,pymongo"
-    $CheckScript = @"
-import importlib.util
-import sys
-
-missing = [name for name in "$RequiredModules".split(",") if importlib.util.find_spec(name) is None]
-if missing:
-    print("missing modules: " + ", ".join(missing))
-    sys.exit(1)
-print(sys.executable)
-"@
+    $CheckScript = "import pandas, numpy, requests, pymongo, sys; print(sys.executable)"
 
     try {
         $Output = & $Executable -c $CheckScript 2>&1
@@ -76,7 +66,7 @@ $env:PORT = "8766"
 function Start-LocalUi {
     Write-Host "Starting local UI..."
     Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" |
-        Where-Object { $_.CommandLine -like "*local_vercel_preview.js*" -and $_.CommandLine -like "*$Root*" } |
+        Where-Object { $_.CommandLine -like "*local_vercel_preview.js*" } |
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 
     Start-Process -FilePath $Node `

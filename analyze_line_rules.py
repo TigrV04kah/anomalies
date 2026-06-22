@@ -48,9 +48,11 @@ BASKETBALL_PERIOD_EXPECTATIONS = {1: 4, 2: 4, 3: 4, 4: 4, 11: 2, 12: 2}
 BASKETBALL_HANDICAP_EVENTS = {"Fora_1", "Fora_2"}
 BASKETBALL_Q4_HANDICAP_PROBABILITY_DELTA_THRESHOLD = 0.25
 BASKETBALL_Q4_HANDICAP_PARAM_DELTA_THRESHOLD = 4.5
+BASKETBALL_PLAYER_NEAR_DELTA_SOFT_MARGIN = 0.125
 TOTAL_DEVIATION_EXTRA_THRESHOLD = 0.5
 POISSON_TOTAL_SPORTS = {"Basketball", "Football", "FootHall", "Handball", "Hockey", "WaterPolo"}
 POISSON_TOTAL_LAMBDA_DELTA_THRESHOLD = 1.0
+POISSON_TOTAL_LAMBDA_SOFT_THRESHOLD = 1.1
 POISSON_TOTAL_CENTER_PROBABILITY_MIN = 0.35
 POISSON_TOTAL_CENTER_PROBABILITY_MAX = 0.65
 POISSON_TOTAL_MARKETS = {
@@ -69,6 +71,8 @@ BOUNDED_SCORE_PROBABILITY_THRESHOLDS = {
 }
 BOUNDED_SCORE_TOTAL_MARKETS = POISSON_TOTAL_MARKETS
 BOUNDED_SCORE_MAX_CONSTRAINTS_PER_SIDE = 12
+TENNIS_FIRST_SERVE_PERCENT_GROUPS = {1119: "p1", 1121: "p2"}
+TENNIS_FIRST_SERVE_HANDICAP_GROUPS = {2257: "p1", 2258: "p2"}
 PERIOD_CONFLICT_ESPORTS_SUBSPORTS = {"Valorant", "CoD", "Dota2", "CS2"}
 PERIOD_CONFLICT_ESPORTS_MATCH_PROBABILITY_DELTA = 0.14
 PERIOD_CONFLICT_ESPORTS_PERIOD_PROBABILITY_DELTA = 0.15
@@ -215,6 +219,28 @@ def period_deviation_threshold(main_param):
     return 8.0
 
 
+def period_deviation_soft_margin(sport, game_type, event_type):
+    if (
+        sport == "AustralianFootball" and
+        game_type == "Main" and
+        str(event_type or "").startswith("IndTotal_")
+    ):
+        return 1.0
+    if sport == "Football" and game_type in {"Corners", "ShotsOnTarget"}:
+        if str(event_type or "").startswith("IndTotal_"):
+            return 0.25
+    if sport == "Football" and game_type == "ShotByGates":
+        if event_type in {"Total_B", "Total_M"}:
+            return 0.5
+    return 0.0
+
+
+def near_delta_status(abs_delta, threshold, soft_margin):
+    if soft_margin and abs_delta <= threshold + soft_margin:
+        return "SOFT"
+    return "DIFF"
+
+
 def probability(coef):
     if pd.isna(coef) or coef <= 0:
         return None
@@ -359,10 +385,12 @@ def analyze_period_deviations_average(df):
                     continue
                 delta = item[p0_col] - sum(item[column] for column in period_cols)
                 threshold = period_deviation_threshold(item[p0_col])
-                if threshold is None or abs(delta) <= threshold:
+                abs_delta = abs(delta)
+                if threshold is None or abs_delta <= threshold:
                     continue
+                soft_margin = period_deviation_soft_margin(sport, item["GameType"], event_type)
                 row = {
-                    "Status": "DIFF",
+                    "Status": near_delta_status(abs_delta, threshold, soft_margin),
                     "MainGameId": item["MainGameId"],
                     "GameType": item["GameType"],
                     "Sport": gi.get("SportName"),
@@ -379,8 +407,11 @@ def analyze_period_deviations_average(df):
                     "P0Sources": item.get(f"{event_type}_0_Sources"),
                     "Delta": round(delta, 4),
                     "CriticalDelta": threshold,
+                    "SoftDeltaMargin": soft_margin,
                     "GID0": item[p0_gid],
                 }
+                if row["Status"] == "SOFT":
+                    row["SoftReason"] = f"abs(delta) <= critical delta + {soft_margin}"
                 for period, col, gid_col in zip(periods, period_cols, period_gids):
                     row[f"P{period}"] = round(item[col], 4)
                     row[f"P{period}Coef"] = rounded_number(item.get(f"{event_type}_{period}_Coef"))
@@ -729,8 +760,9 @@ def analyze_poisson_total_consistency(df):
         abs_delta = abs(delta)
         if abs_delta <= POISSON_TOTAL_LAMBDA_DELTA_THRESHOLD:
             continue
+        status = "SOFT" if abs_delta <= POISSON_TOTAL_LAMBDA_SOFT_THRESHOLD else "DIFF"
         rows.append({
-            "Status": "DIFF",
+            "Status": status,
             "MainGameId": item["MainGameId"],
             "GameId": item.get("Total_GameIdB"),
             "GameType": item["GameType"],
@@ -773,6 +805,11 @@ def analyze_poisson_total_consistency(df):
             "LambdaDelta": round(delta, 4),
             "AbsLambdaDelta": round(abs_delta, 4),
             "CriticalLambdaDelta": POISSON_TOTAL_LAMBDA_DELTA_THRESHOLD,
+            "SoftLambdaDeltaThreshold": POISSON_TOTAL_LAMBDA_SOFT_THRESHOLD,
+            "SoftReason": (
+                f"abs(lambda delta) <= {POISSON_TOTAL_LAMBDA_SOFT_THRESHOLD}"
+                if status == "SOFT" else None
+            ),
             "ParamDelta": rounded_number(item.get("Total_Param") - item.get("IndTotal1_Param") - item.get("IndTotal2_Param"), 4),
         })
     return sorted(rows, key=lambda row: float(row["AbsLambdaDelta"]), reverse=True)
@@ -1892,6 +1929,136 @@ def analyze_tennis_what_earlear(df):
     return rows
 
 
+def tennis_special_first_serve_rows(df):
+    required = {"SportName", "GroupId", "MainGameId", "Period", "Coef", "Param"}
+    if df.empty or not required.issubset(df.columns):
+        return pd.DataFrame()
+    source = df.copy()
+    source["GroupId"] = pd.to_numeric(source["GroupId"], errors="coerce")
+    rows = source[
+        (source["SportName"] == "Tennis") &
+        (source["GroupId"].isin(
+            set(TENNIS_FIRST_SERVE_PERCENT_GROUPS) |
+            set(TENNIS_FIRST_SERVE_HANDICAP_GROUPS)
+        )) &
+        (source["Coef"] > 1) &
+        (source["Param"].notna())
+    ].copy()
+    if rows.empty:
+        return rows
+    rows["Side"] = rows["GroupId"].map({
+        **TENNIS_FIRST_SERVE_PERCENT_GROUPS,
+        **TENNIS_FIRST_SERVE_HANDICAP_GROUPS,
+    })
+    rows["Metric"] = rows["GroupId"].map(
+        lambda group_id: "percent" if group_id in TENNIS_FIRST_SERVE_PERCENT_GROUPS else "handicap"
+    )
+    rows["Source"] = rows.apply(source_label, axis=1)
+    rows["SourceKey"] = rows.apply(
+        lambda row: f"{row.get('ContoraName', '')}|{row.get('Contora', '')}",
+        axis=1,
+    )
+    rows["Probability"] = 1 / rows["Coef"]
+    rows["ProbabilityDistance"] = (rows["Probability"] - 0.5).abs()
+    return rows.sort_values(
+        ["MainGameId", "Period", "SourceKey", "Metric", "Side", "ProbabilityDistance", "Coef", "Param", "GameId"],
+        na_position="last",
+        kind="mergesort",
+    )
+
+
+def analyze_tenis_special(df):
+    rows = tennis_special_first_serve_rows(df)
+    if rows.empty:
+        return []
+    centers = rows.drop_duplicates(
+        ["MainGameId", "Period", "SourceKey", "Metric", "Side"],
+        keep="first",
+    )
+    pivot = centers.pivot_table(
+        index=["MainGameId", "Period", "SourceKey"],
+        columns=["Metric", "Side"],
+        values=["Param", "Coef", "Probability", "GameId", "GroupId", "Source"],
+        aggfunc="first",
+    )
+    pivot.columns = [f"{metric}_{side}_{field}" for field, metric, side in pivot.columns]
+    pivot = pivot.reset_index()
+
+    required_columns = [
+        "percent_p1_Param",
+        "percent_p2_Param",
+        "handicap_p1_Param",
+        "handicap_p2_Param",
+    ]
+    if not set(required_columns).issubset(pivot.columns):
+        return []
+    pivot = pivot.dropna(subset=required_columns)
+    if pivot.empty:
+        return []
+
+    info = game_info_map(df)
+    result = []
+    for _, item in pivot.iterrows():
+        percent_p1 = item["percent_p1_Param"]
+        percent_p2 = item["percent_p2_Param"]
+        if percent_p1 == percent_p2:
+            continue
+        favorite = "p1" if percent_p1 > percent_p2 else "p2"
+        handicap_p1 = item["handicap_p1_Param"]
+        handicap_p2 = item["handicap_p2_Param"]
+        if favorite == "p1":
+            if handicap_p1 < handicap_p2:
+                continue
+            expected = "handicap_p1 < handicap_p2"
+        else:
+            if handicap_p2 < handicap_p1:
+                continue
+            expected = "handicap_p2 < handicap_p1"
+
+        gi = info.get(item["MainGameId"], {})
+        result.append({
+            "Status": "DIFF",
+            "Rule": "first serve percent favorite should have lower first serve handicap",
+            "Scenario": "first_serve_percent_handicap_direction",
+            "MainGameId": item["MainGameId"],
+            "GameId": item.get(f"handicap_{favorite}_GameId"),
+            "GameType": "Statistics",
+            "Sport": gi.get("SportName"),
+            "Champ": gi.get("Champ"),
+            "Opp1": gi.get("Opp1"),
+            "Opp2": gi.get("Opp2"),
+            "Start": gi.get("Start"),
+            "Period": item["Period"],
+            "SourceKey": item["SourceKey"],
+            "Source": item.get("percent_p1_Source") or item.get("percent_p2_Source"),
+            "Favorite": favorite,
+            "Expected": expected,
+            "PercentParamP1": rounded_number(percent_p1),
+            "PercentParamP2": rounded_number(percent_p2),
+            "PercentParamDelta": rounded_number(percent_p1 - percent_p2),
+            "PercentCoefP1": rounded_number(item.get("percent_p1_Coef")),
+            "PercentCoefP2": rounded_number(item.get("percent_p2_Coef")),
+            "PercentProbabilityP1": rounded_number(item.get("percent_p1_Probability"), 6),
+            "PercentProbabilityP2": rounded_number(item.get("percent_p2_Probability"), 6),
+            "PercentGameIdP1": item.get("percent_p1_GameId"),
+            "PercentGameIdP2": item.get("percent_p2_GameId"),
+            "PercentGroupIdP1": item.get("percent_p1_GroupId"),
+            "PercentGroupIdP2": item.get("percent_p2_GroupId"),
+            "HandicapParamP1": rounded_number(handicap_p1),
+            "HandicapParamP2": rounded_number(handicap_p2),
+            "HandicapParamDelta": rounded_number(handicap_p1 - handicap_p2),
+            "HandicapCoefP1": rounded_number(item.get("handicap_p1_Coef")),
+            "HandicapCoefP2": rounded_number(item.get("handicap_p2_Coef")),
+            "HandicapProbabilityP1": rounded_number(item.get("handicap_p1_Probability"), 6),
+            "HandicapProbabilityP2": rounded_number(item.get("handicap_p2_Probability"), 6),
+            "HandicapGameIdP1": item.get("handicap_p1_GameId"),
+            "HandicapGameIdP2": item.get("handicap_p2_GameId"),
+            "HandicapGroupIdP1": item.get("handicap_p1_GroupId"),
+            "HandicapGroupIdP2": item.get("handicap_p2_GroupId"),
+        })
+    return sorted(result, key=lambda row: abs(float(row["PercentParamDelta"])), reverse=True)
+
+
 def basketball_period_delta_limit(full_param):
     if pd.isna(full_param):
         return None
@@ -1995,11 +2162,13 @@ def analyze_basketball_player_periods(centers):
         divider = BASKETBALL_PERIOD_EXPECTATIONS[period]
         expected = full_row["Param"] / divider
         delta = period_row["Param"] - expected
+        abs_delta = abs(delta)
         delta_limit = basketball_period_delta_limit(full_row["Param"])
-        if delta_limit is None or abs(delta) <= delta_limit:
+        if delta_limit is None or abs_delta <= delta_limit:
             continue
+        status = near_delta_status(abs_delta, delta_limit, BASKETBALL_PLAYER_NEAR_DELTA_SOFT_MARGIN)
         rows.append({
-            "Status": "DIFF",
+            "Status": status,
             "Rule": "player points period center deviates from full game share",
             "MainGameId": main_game_id,
             "GameId": period_row.get("GameId"),
@@ -2025,6 +2194,11 @@ def analyze_basketball_player_periods(centers):
             "ExpectedParam": round(expected, 4),
             "Delta": round(delta, 4),
             "DeltaLimit": round(delta_limit, 4),
+            "SoftDeltaMargin": BASKETBALL_PLAYER_NEAR_DELTA_SOFT_MARGIN,
+            "SoftReason": (
+                f"abs(delta) <= delta limit + {BASKETBALL_PLAYER_NEAR_DELTA_SOFT_MARGIN}"
+                if status == "SOFT" else None
+            ),
         })
     return rows
 
@@ -2129,10 +2303,13 @@ def analyze_basketball_player_combinations(centers):
             continue
         expected = sum(row["Param"] for row in component_rows)
         delta = combo_row["Param"] - expected
-        if abs(delta) <= 1.5:
+        abs_delta = abs(delta)
+        delta_limit = 1.5
+        if abs_delta <= delta_limit:
             continue
+        status = near_delta_status(abs_delta, delta_limit, BASKETBALL_PLAYER_NEAR_DELTA_SOFT_MARGIN)
         row = {
-            "Status": "DIFF",
+            "Status": status,
             "Rule": "player combined stat center differs from component centers",
             "MainGameId": main_game_id,
             "GameId": combo_row.get("GameId"),
@@ -2152,7 +2329,12 @@ def analyze_basketball_player_combinations(centers):
             "CenterSource": combo_row.get("SourceLabel"),
             "ExpectedParam": round(expected, 4),
             "Delta": round(delta, 4),
-            "DeltaLimit": 1.5,
+            "DeltaLimit": delta_limit,
+            "SoftDeltaMargin": BASKETBALL_PLAYER_NEAR_DELTA_SOFT_MARGIN,
+            "SoftReason": (
+                f"abs(delta) <= delta limit + {BASKETBALL_PLAYER_NEAR_DELTA_SOFT_MARGIN}"
+                if status == "SOFT" else None
+            ),
         }
         for component, component_row in zip(components, component_rows):
             row[f"{component}Param"] = round(component_row["Param"], 4)
@@ -2315,6 +2497,7 @@ CHECKS = {
     "basketball_q4_handicap_shift": analyze_basketball_q4_handicap_shift,
     "period_conflicts": analyze_period_conflicts,
     "tennis_special_what_earlear": analyze_tennis_what_earlear,
+    "tenis_special": analyze_tenis_special,
 }
 
 

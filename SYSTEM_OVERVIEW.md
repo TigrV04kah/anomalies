@@ -237,6 +237,12 @@ Critical delta by main total:
 | `<= 120` | `6.0` |
 | `> 120` | `8.0` |
 
+Soft near-threshold cases:
+
+- `AustralianFootball / Main / IndTotal_*`: `SOFT` when `abs(delta) <= critical_delta + 1.0`;
+- `Football / Corners / IndTotal_*` and `Football / ShotsOnTarget / IndTotal_*`: `SOFT` when `abs(delta) <= critical_delta + 0.25`;
+- `Football / ShotByGates / Total_B|Total_M`: `SOFT` when `abs(delta) <= critical_delta + 0.5`.
+
 ### Total = Ind total 1 + Ind Total 2 (average)
 
 Internal name:
@@ -316,7 +322,9 @@ P(Poisson(lambda) > Param) = p_over
 
 Anomaly:
 
-- `abs(lambda_total - (lambda_ind_total_1 + lambda_ind_total_2)) > 1.0`.
+- `abs(lambda_total - (lambda_ind_total_1 + lambda_ind_total_2)) > 1.0`;
+- rows up to `1.1` are stored as `SOFT`;
+- rows above `1.1` stay hard `DIFF`.
 
 Excluded for now:
 
@@ -535,6 +543,10 @@ Combination checks:
 - `points_rebounds_assists` should be close to `points + rebounds + assists`;
 - current combination delta threshold is `1.5`.
 
+Soft near-threshold cases:
+
+- period-point and combination delta checks are stored as `SOFT` when the absolute delta is above the normal limit but not above `limit + 0.125`.
+
 ### Basketball Q4 Handicap Shift
 
 Internal name:
@@ -611,6 +623,43 @@ Purpose:
 Checks tennis special market "what earlier" against `Ace` and `Breaks` totals.
 
 If totals point to one expected scenario but the "what earlier" odds point the opposite way, the row is `DIFF`.
+
+### Tenis. Special
+
+Internal name:
+
+```text
+tenis_special
+```
+
+Purpose:
+
+Checks tennis-specific special markets.
+
+First implemented rule: first-serve percentage vs first-serve percentage handicap.
+
+Market ids:
+
+| GroupId | Meaning |
+|---:|---|
+| `1119` | Player 1 first-serve percentage |
+| `1121` | Player 2 first-serve percentage |
+| `2257` | Player 1 first-serve percentage handicap |
+| `2258` | Player 2 first-serve percentage handicap |
+
+Line selection:
+
+- only `SportName = Tennis`;
+- rows are grouped by `MainGameId`, `Period`, and source;
+- for each market side, the central line is selected by coefficient closest to 50% implied probability;
+- comparison uses `Param`, not coefficient.
+
+Anomaly:
+
+- if player 1 has a higher central first-serve percentage parameter, player 1 handicap must be lower than player 2 handicap;
+- if player 2 has a higher central first-serve percentage parameter, player 2 handicap must be lower than player 1 handicap;
+- equal handicap parameters are a conflict when first-serve percentage parameters differ;
+- handicap signs are read directly from stored `Param`.
 
 ## Global Exclusions
 

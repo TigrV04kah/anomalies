@@ -99,7 +99,7 @@ Object.assign(CHECK_HELP, {
   period_deviations_average: {
     title: "Main = Period (average)",
     short: "Проверяет, совпадает ли общий тотал матча с суммой тоталов двух основных периодов.",
-    long: "Для футбола берутся тоталы и индивидуальные тоталы с коэффициентами 1.65-2.30. Param усредняется по MainGameId, GameType, Period и EventType. Затем значение периода 0 сравнивается с суммой периодов 1 и 2. Критическая дельта зависит от размера общего тотала: до 5 = 1.0, до 10 = 1.5, до 20 = 2.0, до 35 = 2.0, выше 35 = 3.0."
+    long: "Для поддерживаемых спортов берутся тоталы и индивидуальные тоталы с коэффициентами 1.65-2.30. Param усредняется по MainGameId, GameType, Period и EventType. Затем период 0 сравнивается с суммой обычных периодов или половин 11+12. Критическая дельта зависит от размера общего тотала. Близкие превышения уходят в SOFT: AustralianFootball/Main/IndTotal до +1.0, Football/Corners и Football/ShotsOnTarget/IndTotal до +0.25, Football/ShotByGates/Total до +0.5."
   },
   total_deviations_average: {
     title: "Total = Ind total 1 + Ind Total 2 (average)",
@@ -109,7 +109,7 @@ Object.assign(CHECK_HELP, {
   poisson_total_consistency: {
     title: "Poisson Total Consistency",
     short: "Checks total consistency through normalized B/M probabilities and Poisson lambda.",
-    long: "For Football, Basketball, Hockey, Handball, WaterPolo and FootHall, the check runs for every period that has a complete same-source Total_B/Total_M, IndTotal_1_B/M and IndTotal_2_B/M set on .5 parameters. It normalizes over probability, keeps only central pairs with normalized over probability between 35% and 65%, converts it to Poisson lambda, and compares lambda_total with lambda_ind1 + lambda_ind2. The anomaly threshold is abs lambda delta > 1.0."
+    long: "For Football, Basketball, Hockey, Handball, WaterPolo and FootHall, the check runs for every period that has a complete same-source Total_B/Total_M, IndTotal_1_B/M and IndTotal_2_B/M set on .5 parameters. It normalizes over probability, keeps only central pairs with normalized over probability between 35% and 65%, converts it to Poisson lambda, and compares lambda_total with lambda_ind1 + lambda_ind2. Rows with abs lambda delta > 1.0 are anomalies; rows up to 1.1 are SOFT, rows above 1.1 stay hard DIFF."
   },
   bounded_score_total_consistency: {
     title: "Bounded Score Total Consistency",
@@ -134,7 +134,7 @@ Object.assign(CHECK_HELP, {
   basketball_players: {
     title: "basketball players",
     short: "Проверяет баскетбольную статистику игроков: очки по периодам, монотонность тоталов и суммы составных рынков.",
-    long: "Берутся только Basketball, GameType GoalPlayers и игроки, у которых есть тотал очков. Центральная линия выбирается по коэффициенту с вероятностью ближе всего к 50%. Для очков четверти 1-4 сравниваются с периодом 0 / 4, половины 11-12 - с периодом 0 / 2. Также проверяется монотонность тоталов больше/меньше с допуском 3% по вероятности для близких параметров и согласованность очки+подборы, очки+передачи, подборы+передачи, очки+подборы+передачи с отдельными компонентами."
+    long: "Берутся только Basketball, GameType GoalPlayers и игроки, у которых есть тотал очков. Центральная линия выбирается по коэффициенту с вероятностью ближе всего к 50%. Для очков четверти 1-4 сравниваются с периодом 0 / 4, половины 11-12 - с периодом 0 / 2. Также проверяется монотонность тоталов больше/меньше с допуском 3% по вероятности для близких параметров и согласованность очки+подборы, очки+передачи, подборы+передачи, очки+подборы+передачи с отдельными компонентами. Для проверок дельты игроков минимальное превышение до DeltaLimit + 0.125 сохраняется как SOFT."
   },
   basketball_q4_handicap_shift: {
     title: "Basketball Q4 Handicap Shift",
@@ -150,6 +150,11 @@ Object.assign(CHECK_HELP, {
     title: "Tennis Special. What Earlear",
     short: "Проверяет теннисную спецставку 'что раньше' против тоталов эйсов и брейков.",
     long: "Для тенниса сравниваются параметры Ace и Breaks с рынками ace_before_break и break_before_ace. Если тоталы указывают на один сценарий, а коэффициент рынка 'что раньше' выглядит противоположно, строка считается аномалией."
+  },
+  tenis_special: {
+    title: "Tenis. Special",
+    short: "Проверяет теннисные спецрынки.",
+    long: "Первое правило сравнивает центральные параметры рынков % попадания 1-й подачи для игрока 1 и игрока 2. У кого центральный параметр выше, тот считается фаворитом по первой подаче. У этого игрока параметр рынка % попадания 1-й подачи, фора должен быть меньше параметра форы соперника. Равные форы при разном проценте первой подачи считаются конфликтом."
   }
 });
 
@@ -535,6 +540,10 @@ function describeAnomaly(item) {
   }
   if (item.check_name === "tennis_special_what_earlear") {
     return `Тоталы Ace (${valueOrDash(payload.Param_Ace)}) и Breaks (${valueOrDash(payload.Param_Breaks)}) конфликтуют с коэффициентами рынка 'что раньше'.`;
+  }
+  if (item.check_name === "tenis_special") {
+    const favoriteText = payload.Favorite === "p1" ? "игрок 1" : "игрок 2";
+    return `Фаворит по % попадания 1-й подачи: ${favoriteText}. Параметры процентов: И1 ${valueOrDash(payload.PercentParamP1)}, И2 ${valueOrDash(payload.PercentParamP2)}. Параметры фор: Фора1 ${valueOrDash(payload.HandicapParamP1)}, Фора2 ${valueOrDash(payload.HandicapParamP2)}. Ожидание: ${valueOrDash(payload.Expected)}.`;
   }
   return helpFor(item).short;
 }
@@ -1008,6 +1017,25 @@ function summaryDetails(item) {
       { label: "Ace", value: valueOrDash(payload.Param_Ace), sub: valueOrDash(payload.koef_ace_before_break) },
       { label: "Breaks", value: valueOrDash(payload.Param_Breaks), sub: valueOrDash(payload.koef_break_before_ace) },
       { label: "Ключ", value: "what earlier", sub: payload.Period ? `Period ${payload.Period}` : "-" },
+    ];
+  }
+  if (item.check_name === "tenis_special") {
+    return [
+      {
+        label: "% 1-й подачи",
+        value: `И1 ${valueOrDash(payload.PercentParamP1)} / И2 ${valueOrDash(payload.PercentParamP2)}`,
+        sub: `И1 ${compactCoef(payload.PercentCoefP1, payload.PercentProbabilityP1, payload.Source)} · И2 ${compactCoef(payload.PercentCoefP2, payload.PercentProbabilityP2)}`,
+      },
+      {
+        label: "Фора",
+        value: `Ф1 ${valueOrDash(payload.HandicapParamP1)} / Ф2 ${valueOrDash(payload.HandicapParamP2)}`,
+        sub: `Ф1 ${compactCoef(payload.HandicapCoefP1, payload.HandicapProbabilityP1)} · Ф2 ${compactCoef(payload.HandicapCoefP2, payload.HandicapProbabilityP2)}`,
+      },
+      {
+        label: "Ключ",
+        value: valueOrDash(payload.Expected),
+        sub: `favorite ${valueOrDash(payload.Favorite)} · Δ% ${valueOrDash(payload.PercentParamDelta)} · ΔФ ${valueOrDash(payload.HandicapParamDelta)}`,
+      },
     ];
   }
   return [

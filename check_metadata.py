@@ -15,6 +15,7 @@ CHECK_TITLES = {
     "basketball_q4_handicap_shift": "Basketball Q4 Handicap Shift",
     "period_conflicts": "Period Conflicts",
     "tennis_special_what_earlear": "Tennis Special. What Earlear",
+    "tenis_special": "Tenis. Special",
 }
 
 
@@ -119,5 +120,13 @@ def stable_key(check_name, row):
             check_name,
             str(row.get("MainGameId", "")),
             str(row.get("Period", "")),
+        ])
+    if check_name == "tenis_special":
+        return "|".join([
+            check_name,
+            str(row.get("MainGameId", "")),
+            str(row.get("Period", "")),
+            str(row.get("SourceKey", "")),
+            str(row.get("Scenario", "")),
         ])
     return check_name + "|" + json.dumps(row, ensure_ascii=False, sort_keys=True)

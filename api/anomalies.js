@@ -19,7 +19,8 @@ const ACTIVE_CHECK_TITLES = [
   "basketball players",
   "Basketball Q4 Handicap Shift",
   "Period Conflicts",
-  "Tennis Special. What Earlear"
+  "Tennis Special. What Earlear",
+  "Tenis. Special"
 ];
 
 function normalizeCheckTitles(value) {

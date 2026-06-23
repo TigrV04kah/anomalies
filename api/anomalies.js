@@ -70,6 +70,45 @@ async function currentRunIdForQuery(selectedCheckTitles, latestRunId, status) {
   return latestRunId;
 }
 
+function independentTitlesInQuery(selectedCheckTitles) {
+  return selectedCheckTitles.filter(title => INDEPENDENT_CURRENT_CHECK_TITLES.has(title));
+}
+
+function shouldMergeIndependentCurrent(selectedCheckTitles, scope) {
+  return (
+    scope === "current" &&
+    independentTitlesInQuery(selectedCheckTitles).length > 0 &&
+    !(selectedCheckTitles.length === 1 && INDEPENDENT_CURRENT_CHECK_TITLES.has(selectedCheckTitles[0]))
+  );
+}
+
+async function fetchIndependentCurrentRows(baseParams, selectedCheckTitles, status) {
+  const rows = [];
+  for (const title of independentTitlesInQuery(selectedCheckTitles)) {
+    const checkRunId = await latestRunIdForCheckTitle(title, status);
+    if (!checkRunId) continue;
+    rows.push(...await supabaseFetch("check_results", {
+      params: {
+        ...baseParams,
+        check_title: `eq.${title}`,
+        last_run_id: `eq.${checkRunId}`,
+        limit: "10000"
+      }
+    }));
+  }
+  return rows;
+}
+
+function mergeRowsByResultKey(rows, extraRows, limit) {
+  const byKey = new Map();
+  for (const row of [...rows, ...extraRows]) {
+    byKey.set(row.result_key || JSON.stringify(row), row);
+  }
+  return [...byKey.values()]
+    .sort((left, right) => new Date(right.last_seen_at || 0) - new Date(left.last_seen_at || 0))
+    .slice(0, limit);
+}
+
 async function fetchCurrentNewCheckStats(latestRunId) {
   const stats = Object.fromEntries(ACTIVE_CHECK_TITLES.map(title => [title, { new: 0 }]));
   stats.all = { new: 0 };
@@ -180,6 +219,10 @@ module.exports = async function handler(req, res) {
     let items;
     try {
       items = await supabaseFetch("check_results", { params });
+      if (shouldMergeIndependentCurrent(selectedCheckTitles, scope)) {
+        const extraItems = await fetchIndependentCurrentRows(params, selectedCheckTitles, status);
+        items = mergeRowsByResultKey(items, extraItems, limit);
+      }
     } catch (error) {
       const missingCheckTitle = String(error.message || "").includes("check_title");
       if (!missingCheckTitle) throw error;
@@ -201,7 +244,7 @@ module.exports = async function handler(req, res) {
     }
 
     const statsBaseParams = {
-      select: "verdict",
+      select: "result_key,verdict,last_seen_at",
       status: `eq.${status}`,
       limit: "10000"
     };
@@ -212,6 +255,14 @@ module.exports = async function handler(req, res) {
     let statsRows;
     try {
       statsRows = await supabaseFetch("check_results", { params: statsBaseParams });
+      if (shouldMergeIndependentCurrent(selectedCheckTitles, scope)) {
+        const extraStatsRows = await fetchIndependentCurrentRows(
+          { ...statsBaseParams, select: "result_key,verdict,last_seen_at" },
+          selectedCheckTitles,
+          status
+        );
+        statsRows = mergeRowsByResultKey(statsRows, extraStatsRows, 10000);
+      }
     } catch (error) {
       const missingCheckTitle = String(error.message || "").includes("check_title");
       if (!missingCheckTitle) throw error;

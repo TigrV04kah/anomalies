@@ -76,5 +76,11 @@
     "check_title": "Tenis. Special",
     "short_description": "Проверяет теннисные спецрынки.",
     "full_description": "Первое правило сравнивает центральные параметры рынков % попадания 1-й подачи: GroupId 1119 для игрока 1 и GroupId 1121 для игрока 2. Центральная линия выбирается по коэффициенту, ближайшему к вероятности 50%. У кого параметр больше, тот считается фаворитом по первой подаче. Затем сравниваются центральные параметры рынков % попадания 1-й подачи, фора: GroupId 2257 для Фора1 и GroupId 2258 для Фора2. Если фаворит игрок 1, Фора1 должна быть меньше Фора2; если фаворит игрок 2, Фора2 должна быть меньше Фора1. Равные форы при разных параметрах первой подачи считаются конфликтом."
+  },
+  {
+    "check_name": "bookmaker_total_disagreement",
+    "check_title": "Bookmaker Total Disagreement",
+    "short_description": "Compares central bookmaker Total_B lines and shows only likely_real_total_disagreement defects.",
+    "full_description": "One defect is one comparison_key: MainGameID + event id + GameType + Period. The check uses only the hard likely_real_total_disagreement rows from total_b_likely_real_total_disagreement.xlsx and keeps source-level parameter, coefficient, probability, origin and update time for review."
   }
 ]

@@ -8,6 +8,12 @@ reports/
 *.csv
 *.db
 linegame_state.json
+node_modules/
+
+# Local bookmaker comparison artifacts
+comparesion/cache/
+comparesion/flat final table/
+comparesion/*.json
 
 # Local notebooks and private dictionaries/snapshots
 *.ipynb

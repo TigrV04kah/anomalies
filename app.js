@@ -495,6 +495,9 @@ function isIndividualTotalFavoriteCheck(item) {
 
 function describeAnomaly(item) {
   const payload = item.payload_json || {};
+  if (item.check_name === "bookmaker_total_disagreement") {
+    return `Bookmaker total disagreement: ${valueOrDash(payload.Opp1)} - ${valueOrDash(payload.Opp2)}, ${valueOrDash(payload.Market || payload.EventType)}, params ${valueOrDash(payload.ParameterMin)} -> ${valueOrDash(payload.ParameterMax)}. Spread: ${valueOrDash(payload.ParameterSpread)}, threshold: ${valueOrDash(payload.CriticalDelta)}.`;
+  }
   if (item.check_name === "period_conflicts") {
     return `В матче фаворит ${valueOrDash(payload.MatchFavorite)}, но в периоде ${valueOrDash(payload.Period)} фаворит ${valueOrDash(payload.PeriodFavorite)}. GameType: ${valueOrDash(payload.GameType)}.`;
   }
@@ -806,6 +809,25 @@ function setSummary(container, details) {
 
 function summaryDetails(item) {
   const payload = item.payload_json || {};
+  if (item.check_name === "bookmaker_total_disagreement") {
+    return [
+      {
+        label: `${valueOrDash(payload.Opp1)} - ${valueOrDash(payload.Opp2)}`,
+        value: `${valueOrDash(payload.Market || payload.EventType)} P${valueOrDash(payload.Period)}`,
+        sub: `${valueOrDash(payload.Sport)} / ${valueOrDash(payload.Champ)}`,
+      },
+      {
+        label: "Parameter spread",
+        value: `${valueOrDash(payload.ParameterMin)} -> ${valueOrDash(payload.ParameterMax)}`,
+        sub: `spread ${valueOrDash(payload.ParameterSpread)} / threshold ${valueOrDash(payload.CriticalDelta)}`,
+      },
+      {
+        label: "Sources",
+        value: valueOrDash(payload.SourceCount),
+        sub: valueOrDash(payload.Sources),
+      },
+    ];
+  }
   if (item.check_name === "total_deviations_average") {
     const side = totalSide(payload);
     return [
@@ -1050,6 +1072,21 @@ function renderDetails(container, item) {
   container.querySelectorAll(".table-scroll").forEach(node => node.remove());
   container.classList.remove("details-grid");
   setSummary(container, summaryDetails(item));
+  if (item.check_name === "bookmaker_total_disagreement" && Array.isArray(payload.Rows)) {
+    appendTable(
+      container,
+      ["Source", "Origin", "GameID", "Param", "Coef", "Probability", "Updated MSK"],
+      payload.Rows.map(row => [
+        row.Source,
+        row.Origin,
+        row.GameId,
+        row.Parameter,
+        row.Coefficient,
+        row.Probability,
+        row.UpdatedMsk,
+      ])
+    );
+  }
 }
 
 function renderGuide() {

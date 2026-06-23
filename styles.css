@@ -608,6 +608,10 @@ main {
   background: var(--panel);
 }
 
+.grid > .table-scroll {
+  grid-column: 1 / -1;
+}
+
 .details-table {
   width: 100%;
   min-width: max(100%, calc(var(--columns, 4) * 112px));

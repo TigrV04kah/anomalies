@@ -24,6 +24,10 @@ const ACTIVE_CHECK_TITLES = [
   "Bookmaker Total Disagreement"
 ];
 
+const INDEPENDENT_CURRENT_CHECK_TITLES = new Set([
+  "Bookmaker Total Disagreement"
+]);
+
 function normalizeCheckTitles(value) {
   const rawValues = Array.isArray(value) ? value : [value];
   return rawValues
@@ -41,6 +45,29 @@ function checkTitleFilter(titles) {
     return `eq.${titles[0]}`;
   }
   return `in.(${titles.map(quotedCheckTitle).join(",")})`;
+}
+
+async function latestRunIdForCheckTitle(title, status = "DIFF") {
+  const rows = await supabaseFetch("check_results", {
+    params: {
+      select: "last_run_id",
+      check_title: `eq.${title}`,
+      status: `eq.${status}`,
+      order: "last_seen_at.desc",
+      limit: "1"
+    }
+  });
+  return rows[0]?.last_run_id;
+}
+
+async function currentRunIdForQuery(selectedCheckTitles, latestRunId, status) {
+  if (
+    selectedCheckTitles.length === 1 &&
+    INDEPENDENT_CURRENT_CHECK_TITLES.has(selectedCheckTitles[0])
+  ) {
+    return await latestRunIdForCheckTitle(selectedCheckTitles[0], status) || latestRunId;
+  }
+  return latestRunId;
 }
 
 async function fetchCurrentNewCheckStats(latestRunId) {
@@ -77,6 +104,24 @@ async function fetchCurrentNewCheckStats(latestRunId) {
     stats[title].new += 1;
     stats.all.new += 1;
   }
+
+  for (const title of INDEPENDENT_CURRENT_CHECK_TITLES) {
+    const checkRunId = await latestRunIdForCheckTitle(title, "DIFF");
+    if (!checkRunId) continue;
+    const currentCount = stats[title]?.new || 0;
+    const checkRows = await supabaseFetch("check_results", {
+      params: {
+        select: "result_key",
+        check_title: `eq.${title}`,
+        status: "eq.DIFF",
+        verdict: "is.null",
+        last_run_id: `eq.${checkRunId}`,
+        limit: "10000"
+      }
+    });
+    stats.all.new += checkRows.length - currentCount;
+    stats[title] = { new: checkRows.length };
+  }
   return stats;
 }
 
@@ -108,6 +153,9 @@ module.exports = async function handler(req, res) {
       }
     });
     const latestRunId = latestRuns[0]?.run_id;
+    const currentRunId = scope === "current"
+      ? await currentRunIdForQuery(selectedCheckTitles, latestRunId, status)
+      : latestRunId;
 
     const params = {
       select: "result_key,check_name,check_title,status,first_seen_at,last_seen_at,last_run_id,occurrence_count,payload_json,verdict,review_comment,reviewed_by,reviewed_at",
@@ -117,8 +165,8 @@ module.exports = async function handler(req, res) {
     };
 
     params.check_title = checkTitleFilter(selectedCheckTitles);
-    if (scope === "current" && latestRunId) {
-      params.last_run_id = `eq.${latestRunId}`;
+    if (scope === "current" && currentRunId) {
+      params.last_run_id = `eq.${currentRunId}`;
     }
 
     if (verdict === "unreviewed") {
@@ -158,8 +206,8 @@ module.exports = async function handler(req, res) {
       limit: "10000"
     };
     statsBaseParams.check_title = checkTitleFilter(selectedCheckTitles);
-    if (scope === "current" && latestRunId) {
-      statsBaseParams.last_run_id = `eq.${latestRunId}`;
+    if (scope === "current" && currentRunId) {
+      statsBaseParams.last_run_id = `eq.${currentRunId}`;
     }
     let statsRows;
     try {

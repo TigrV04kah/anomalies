@@ -19,7 +19,7 @@ FOOTBALL_STAT_TYPES = [
     "GoalFromGates",
     "PossessionPercentage",
 ]
-FOOTBALL_INVERTED = {"Save", "GoalFromGates"}
+FOOTBALL_INVERTED = {"Save", "GoalFromGates", "Tackles"}
 SHOT_RELATION_TYPES = {"ShotsOnTarget", "ShotByGates", "GoalFromGates"}
 TOTAL_CENTER_EVENTS = {"Total_B", "Total_M"}
 BASKETBALL_PLAYER_EVENT_TYPES = {

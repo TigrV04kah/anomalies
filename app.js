@@ -119,7 +119,7 @@ Object.assign(CHECK_HELP, {
   stat_conflicts: {
     title: "Stat Conflicts",
     short: "Проверяет конфликт между фаворитом матча и фаворитом по статистическому рынку.",
-    long: "Сначала определяется фаворит матча по рынкам p1/p2. Потом определяется фаворит по статистике: Corners, Tackles, ShotsOnTarget, ShotByGates, Save, GoalFromGates, PossessionPercentage. Если фавориты противоположны, строка считается аномалией. Для Save и GoalFromGates логика инвертирована."
+    long: "Сначала определяется фаворит матча по рынкам p1/p2. Потом определяется фаворит по статистике: Corners, Tackles, ShotsOnTarget, ShotByGates, Save, GoalFromGates, PossessionPercentage. Если фавориты противоположны, строка считается аномалией. Для Save, GoalFromGates и Tackles логика инвертирована."
   },
   individual_total_favorite_consistency: {
     title: "Individual Total Favorite Consistency",

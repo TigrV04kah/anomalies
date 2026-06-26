@@ -89,6 +89,23 @@ function chunks(items, size) {
   return result;
 }
 
+async function fetchPaged(table, { params = {}, maxRows = 1000, pageSize = 1000 } = {}) {
+  const rows = [];
+  while (rows.length < maxRows) {
+    const limit = Math.min(pageSize, maxRows - rows.length);
+    const page = await supabaseFetch(table, {
+      params: {
+        ...params,
+        limit: String(limit),
+        offset: String(rows.length)
+      }
+    });
+    rows.push(...page);
+    if (page.length < limit) break;
+  }
+  return rows;
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== "GET") {
     res.setHeader("allow", "GET");
@@ -97,12 +114,13 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const historyLimit = Math.min(Number.parseInt(req.query.history_limit || "2016", 10) || 2016, 5000);
-    const runs = await supabaseFetch("run_statistics", {
+    const historyLimit = Math.min(Number.parseInt(req.query.history_limit || "5000", 10) || 5000, 5000);
+    const selectedSport = String(req.query.sport || "").trim();
+    const runs = await fetchPaged("run_statistics", {
+      maxRows: historyLimit,
       params: {
         select: "run_id,started_at,snapshot_games",
-        order: "started_at.desc",
-        limit: String(historyLimit)
+        order: "started_at.desc"
       }
     });
     const latest = runs[0] || null;
@@ -137,15 +155,19 @@ module.exports = async function handler(req, res) {
       })
     ]);
     const sportHistory = [];
-    for (const chunk of chunks(runIds, 100)) {
-      const rows = await supabaseFetch("snapshot_sport_statistics", {
-        params: {
-          select: "run_id,sport,unique_main_games,unique_main_game_types,unique_event_types,games_count,events_count",
-          run_id: `in.(${chunk.map(id => `"${id}"`).join(",")})`,
-          limit: "20000"
-        }
-      });
-      sportHistory.push(...rows);
+    if (selectedSport) {
+      for (const chunk of chunks(runIds, 100)) {
+        const rows = await fetchPaged("snapshot_sport_statistics", {
+          maxRows: chunk.length,
+          params: {
+            select: "run_id,sport,unique_main_games,unique_main_game_types,unique_event_types,games_count,events_count",
+            sport: `eq.${selectedSport}`,
+            run_id: `in.(${chunk.map(id => `"${id}"`).join(",")})`,
+            order: "run_id.asc"
+          }
+        });
+        sportHistory.push(...rows);
+      }
     }
 
     sendJson(res, 200, {
@@ -154,6 +176,7 @@ module.exports = async function handler(req, res) {
       subsport,
       gameType,
       hourlyAverage: averageHourlyByRun(runs, sportHistory),
+      selectedSport: selectedSport || null,
       historyRuns: runs.length
     });
   } catch (error) {

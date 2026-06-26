@@ -1317,7 +1317,7 @@ function renderSportRowsTable(container, rows) {
     });
     tr.addEventListener("click", () => {
       state.selectedLineSport = state.selectedLineSport === row.sport ? null : row.sport;
-      renderLineDashboard();
+      loadLineDashboard();
     });
     tr.addEventListener("keydown", event => {
       if (event.key === "Enter" || event.key === " ") {
@@ -1553,7 +1553,11 @@ async function loadLineDashboard() {
   state.loading = true;
   refreshButton.disabled = true;
   try {
-    const response = await fetch("/api/line-dashboard");
+    const params = new URLSearchParams();
+    if (state.selectedLineSport) {
+      params.set("sport", state.selectedLineSport);
+    }
+    const response = await fetch(`/api/line-dashboard${params.toString() ? `?${params}` : ""}`);
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Load failed");
     state.lineDashboard = data;

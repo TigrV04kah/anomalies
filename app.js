@@ -496,7 +496,8 @@ function isIndividualTotalFavoriteCheck(item) {
 function describeAnomaly(item) {
   const payload = item.payload_json || {};
   if (item.check_name === "bookmaker_total_disagreement") {
-    return `Bookmaker total disagreement: ${valueOrDash(payload.Opp1)} - ${valueOrDash(payload.Opp2)}, ${valueOrDash(payload.Market || payload.EventType)}, params ${valueOrDash(payload.ParameterMin)} -> ${valueOrDash(payload.ParameterMax)}. Spread: ${valueOrDash(payload.ParameterSpread)}, threshold: ${valueOrDash(payload.CriticalDelta)}.`;
+    const reason = payload.DisagreementReason ? ` Reason: ${payload.DisagreementReason}.` : "";
+    return `Bookmaker total disagreement: ${valueOrDash(payload.Opp1)} - ${valueOrDash(payload.Opp2)}, ${valueOrDash(payload.Market || payload.EventType)}, params ${valueOrDash(payload.ParameterMin)} -> ${valueOrDash(payload.ParameterMax)}. Spread: ${valueOrDash(payload.ParameterSpread)}, threshold: ${valueOrDash(payload.CriticalDelta)}.${reason}`;
   }
   if (item.check_name === "period_conflicts") {
     return `В матче фаворит ${valueOrDash(payload.MatchFavorite)}, но в периоде ${valueOrDash(payload.Period)} фаворит ${valueOrDash(payload.PeriodFavorite)}. GameType: ${valueOrDash(payload.GameType)}.`;
@@ -822,9 +823,9 @@ function summaryDetails(item) {
         sub: `spread ${valueOrDash(payload.ParameterSpread)} / threshold ${valueOrDash(payload.CriticalDelta)}`,
       },
       {
-        label: "Sources",
-        value: valueOrDash(payload.SourceCount),
-        sub: valueOrDash(payload.Sources),
+        label: valueOrDash(payload.DisagreementReason || "Sources"),
+        value: valueOrDash(payload.TotalMCorridorWidth || payload.SourceCount),
+        sub: valueOrDash(payload.PairedTotalMCoefficients || payload.Sources),
       },
     ];
   }
@@ -1075,7 +1076,7 @@ function renderDetails(container, item) {
   if (item.check_name === "bookmaker_total_disagreement" && Array.isArray(payload.Rows)) {
     appendTable(
       container,
-      ["Source", "Origin", "GameID", "Param", "Coef", "Probability", "Updated MSK"],
+      ["Source", "Origin", "GameID", "Param", "Coef", "Probability", "Paired TM", "Updated MSK"],
       payload.Rows.map(row => [
         row.Source,
         row.Origin,
@@ -1083,6 +1084,7 @@ function renderDetails(container, item) {
         row.Parameter,
         row.Coefficient,
         row.Probability,
+        row.PairedTotalMCoefficients || row.PairedTotalMParameters,
         row.UpdatedMsk,
       ])
     );

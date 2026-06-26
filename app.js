@@ -811,6 +811,12 @@ function setSummary(container, details) {
 function summaryDetails(item) {
   const payload = item.payload_json || {};
   if (item.check_name === "bookmaker_total_disagreement") {
+    const centralPairedTotalM = hasValue(payload.CentralPairedTotalMParameter)
+      ? [
+          `TM ${payload.CentralPairedTotalMParameter}`,
+          compactCoef(payload.CentralPairedTotalMCoefficient, payload.CentralPairedTotalMProbability, payload.CentralPairedTotalMSource)
+        ].filter(Boolean).join(" · ")
+      : valueOrDash(payload.PairedTotalMCoefficients || payload.Sources);
     return [
       {
         label: `${valueOrDash(payload.Opp1)} - ${valueOrDash(payload.Opp2)}`,
@@ -825,7 +831,7 @@ function summaryDetails(item) {
       {
         label: valueOrDash(payload.DisagreementReason || "Sources"),
         value: valueOrDash(payload.TotalMCorridorWidth || payload.SourceCount),
-        sub: valueOrDash(payload.PairedTotalMCoefficients || payload.Sources),
+        sub: centralPairedTotalM,
       },
     ];
   }
@@ -1076,7 +1082,7 @@ function renderDetails(container, item) {
   if (item.check_name === "bookmaker_total_disagreement" && Array.isArray(payload.Rows)) {
     appendTable(
       container,
-      ["Source", "Origin", "GameID", "Param", "Coef", "Probability", "Paired TM", "Updated MSK"],
+      ["Source", "Origin", "GameID", "Param", "Coef", "Probability", "Central TM", "Paired TM", "Updated MSK"],
       payload.Rows.map(row => [
         row.Source,
         row.Origin,
@@ -1084,6 +1090,13 @@ function renderDetails(container, item) {
         row.Parameter,
         row.Coefficient,
         row.Probability,
+        hasValue(row.CentralPairedTotalMParameter)
+          ? [
+              row.CentralPairedTotalMSource,
+              row.CentralPairedTotalMParameter,
+              compactCoef(row.CentralPairedTotalMCoefficient, row.CentralPairedTotalMProbability)
+            ].filter(Boolean).join(" ")
+          : "-",
         row.PairedTotalMCoefficients || row.PairedTotalMParameters,
         row.UpdatedMsk,
       ])

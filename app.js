@@ -496,8 +496,9 @@ function isIndividualTotalFavoriteCheck(item) {
 function describeAnomaly(item) {
   const payload = item.payload_json || {};
   if (item.check_name === "bookmaker_total_disagreement") {
-    const reason = payload.DisagreementReason ? ` Reason: ${payload.DisagreementReason}.` : "";
-    return `Bookmaker total disagreement: ${valueOrDash(payload.Opp1)} - ${valueOrDash(payload.Opp2)}, ${valueOrDash(payload.Market || payload.EventType)}, params ${valueOrDash(payload.ParameterMin)} -> ${valueOrDash(payload.ParameterMax)}. Spread: ${valueOrDash(payload.ParameterSpread)}, threshold: ${valueOrDash(payload.CriticalDelta)}.${reason}`;
+    const reason = payload.DisagreementReason || payload.TotalMDisagreementReason;
+    const reasonText = reason ? ` Reason: ${reason}.` : "";
+    return `Bookmaker total disagreement: ${valueOrDash(payload.Opp1)} - ${valueOrDash(payload.Opp2)}, ${valueOrDash(payload.Market || payload.EventType)}, params ${valueOrDash(payload.ParameterMin)} -> ${valueOrDash(payload.ParameterMax)}. Spread: ${valueOrDash(payload.ParameterSpread)}, threshold: ${valueOrDash(payload.CriticalDelta)}.${reasonText}`;
   }
   if (item.check_name === "period_conflicts") {
     return `В матче фаворит ${valueOrDash(payload.MatchFavorite)}, но в периоде ${valueOrDash(payload.Period)} фаворит ${valueOrDash(payload.PeriodFavorite)}. GameType: ${valueOrDash(payload.GameType)}.`;
@@ -829,7 +830,7 @@ function summaryDetails(item) {
         sub: `spread ${valueOrDash(payload.ParameterSpread)} / threshold ${valueOrDash(payload.CriticalDelta)}`,
       },
       {
-        label: valueOrDash(payload.DisagreementReason || "Sources"),
+        label: valueOrDash(payload.DisagreementReason || payload.TotalMDisagreementReason || "Sources"),
         value: valueOrDash(payload.TotalMCorridorWidth || payload.SourceCount),
         sub: centralPairedTotalM,
       },
@@ -1082,7 +1083,7 @@ function renderDetails(container, item) {
   if (item.check_name === "bookmaker_total_disagreement" && Array.isArray(payload.Rows)) {
     appendTable(
       container,
-      ["Source", "Origin", "GameID", "Param", "Coef", "Probability", "Central TM", "Paired TM", "Updated MSK"],
+      ["Source", "Origin", "GameID", "Param", "Coef", "Probability", "Snapshot ref", "Central TM", "Paired TM", "Updated MSK"],
       payload.Rows.map(row => [
         row.Source,
         row.Origin,
@@ -1090,6 +1091,13 @@ function renderDetails(container, item) {
         row.Parameter,
         row.Coefficient,
         row.Probability,
+        hasValue(row.SnapshotReferenceParameter)
+          ? [
+              row.SnapshotReferenceSource,
+              row.SnapshotReferenceParameter,
+              compactCoef(row.SnapshotReferenceCoefficient, row.SnapshotReferenceProbability)
+            ].filter(Boolean).join(" ")
+          : "-",
         hasValue(row.CentralPairedTotalMParameter)
           ? [
               row.CentralPairedTotalMSource,
